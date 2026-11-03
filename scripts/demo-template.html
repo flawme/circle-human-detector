@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>circle-human-detector &mdash; interactive demo</title>
+    <style>
+      :root {
+        --bg: #0e1116;
+        --panel: #161b23;
+        --border: #232a35;
+        --text: #e6e9ef;
+        --muted: #8b94a3;
+        --accent: #4a9dff;
+        --green: #3ecf6f;
+        --red: #ff5d5d;
+        --amber: #f2c14e;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        line-height: 1.45;
+      }
+      header {
+        max-width: 1060px;
+        margin: 0 auto;
+        padding: 28px 20px 6px;
+      }
+      h1 { font-size: 1.35rem; margin: 0 0 4px; }
+      .tagline { color: var(--muted); font-size: 0.92rem; margin: 0; }
+      .layout {
+        max-width: 1060px;
+        margin: 0 auto;
+        padding: 12px 20px 8px;
+        display: grid;
+        grid-template-columns: minmax(0, 1.15fr) minmax(300px, 1fr);
+        gap: 16px;
+        align-items: start;
+      }
+      @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 14px;
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+      select, button {
+        font: inherit;
+        color: var(--text);
+        background: #1c232e;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 7px 14px;
+        cursor: pointer;
+      }
+      button:hover { border-color: var(--accent); }
+      button:disabled { opacity: 0.45; cursor: default; }
+      button.primary { background: #17324f; border-color: #274d75; }
+      .botrow {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        margin-top: 12px;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        height: auto;
+        background: #0b0e13;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        /* Required for touch drawing: prevents scrolling mid-stroke. */
+        touch-action: none;
+        cursor: crosshair;
+      }
+      .hint { color: var(--muted); font-size: 0.88rem; margin: 10px 2px 0; min-height: 1.3em; }
+      .stack { display: grid; gap: 16px; }
+      .verdict-badge {
+        display: inline-block;
+        font-weight: 700;
+        font-size: 1.05rem;
+        padding: 6px 14px;
+        border-radius: 8px;
+        letter-spacing: 0.02em;
+      }
+      .verdict-badge.HUMAN_LIKE { background: rgba(62, 207, 111, 0.14); color: var(--green); border: 1px solid rgba(62, 207, 111, 0.4); }
+      .verdict-badge.SUSPICIOUS { background: rgba(255, 93, 93, 0.12); color: var(--red); border: 1px solid rgba(255, 93, 93, 0.4); }
+      .verdict-badge.INCONCLUSIVE { background: rgba(242, 193, 78, 0.1); color: var(--amber); border: 1px solid rgba(242, 193, 78, 0.35); }
+      .bar-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+      .bar-row label { width: 88px; color: var(--muted); font-size: 0.88rem; }
+      .bar-track { flex: 1; height: 10px; background: #0b0e13; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+      .bar-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.25s ease; }
+      .bar-value { width: 44px; text-align: right; font-variant-numeric: tabular-nums; font-size: 0.9rem; }
+      .stats { color: var(--muted); font-size: 0.86rem; margin: 10px 0 0; }
+      h3 { font-size: 0.95rem; margin: 0 0 8px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
+      ul.anomaly-list { list-style: none; margin: 0; padding: 0; }
+      ul.anomaly-list li {
+        padding: 8px 10px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        margin-bottom: 8px;
+        font-size: 0.88rem;
+      }
+      ul.anomaly-list li b { font-variant-numeric: tabular-nums; }
+      .sev { font-size: 0.72rem; font-weight: 700; padding: 1px 7px; border-radius: 5px; margin-right: 6px; vertical-align: 1px; }
+      .sev.high { background: rgba(255, 93, 93, 0.16); color: var(--red); }
+      .sev.medium { background: rgba(242, 193, 78, 0.12); color: var(--amber); }
+      .sev.low { background: rgba(139, 148, 163, 0.14); color: var(--muted); }
+      .muted { color: var(--muted); }
+      table.metrics { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+      table.metrics th {
+        text-align: left; color: var(--muted); font-weight: 600;
+        padding: 4px 8px; border-bottom: 1px solid var(--border); font-size: 0.78rem;
+        text-transform: uppercase; letter-spacing: 0.05em;
+      }
+      table.metrics td { padding: 5px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+      table.metrics td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+      .mini-track { display: inline-block; width: 54px; height: 6px; background: #0b0e13; border-radius: 4px; vertical-align: 1px; margin-right: 6px; }
+      .mini-fill { height: 100%; border-radius: 4px; background: var(--accent); }
+      .zero-weight { opacity: 0.45; }
+      .note { color: var(--muted); font-size: 0.78rem; display: block; margin-top: 2px; }
+      details { color: var(--muted); font-size: 0.88rem; }
+      details summary { cursor: pointer; color: var(--text); font-weight: 600; font-size: 0.92rem; margin-bottom: 6px; }
+      details p { margin: 6px 0; }
+      footer {
+        max-width: 1060px; margin: 0 auto; padding: 10px 20px 30px;
+        color: var(--muted); font-size: 0.82rem;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>circle-human-detector</h1>
+      <p class="tagline">
+        Behavioral bot detection for circle drawing. Runs entirely on this
+        page &mdash; nothing is sent anywhere. Draw one circle with your
+        mouse, finger, or stylus, then release.
+      </p>
+    </header>
+
+    <main class="layout">
+      <section>
+        <div class="controls">
+          <label class="muted" for="sensitivity">Sensitivity</label>
+          <select id="sensitivity">
+            <option value="relaxed">relaxed</option>
+            <option value="balanced" selected>balanced</option>
+            <option value="strict">strict</option>
+          </select>
+          <button id="analyze" class="primary">Re-analyze</button>
+          <button id="clear">Clear</button>
+        </div>
+
+        <canvas id="surface" width="640" height="480"></canvas>
+
+        <div class="botrow">
+          <span>Or replay a synthetic machine:</span>
+          <button id="bot-clean">Bot: scripted</button>
+          <button id="bot-noisy">Bot: noisy</button>
+        </div>
+        <p class="hint" id="hint">The faint ring is only a visual guide &mdash; the analysis never measures how well you traced it.</p>
+      </section>
+
+      <section class="stack">
+        <div class="card" id="verdict-card">
+          <span class="verdict-badge INCONCLUSIVE" id="verdict">DRAW A CIRCLE</span>
+          <div id="bars" hidden>
+            <div class="bar-row">
+              <label>human-likelihood</label>
+              <div class="bar-track"><div class="bar-fill" id="score-bar"></div></div>
+              <span class="bar-value" id="score-value"></span>
+            </div>
+            <div class="bar-row">
+              <label>confidence</label>
+              <div class="bar-track"><div class="bar-fill" id="conf-bar"></div></div>
+              <span class="bar-value" id="conf-value"></span>
+            </div>
+          </div>
+          <p class="stats" id="stats" hidden></p>
+        </div>
+
+        <div class="card" id="anomalies-card" hidden>
+          <h3>Signals detected</h3>
+          <ul class="anomaly-list" id="anomaly-list"></ul>
+        </div>
+
+        <div class="card" id="metrics-card" hidden>
+          <h3>Per-metric contributions</h3>
+          <table class="metrics">
+            <thead>
+              <tr><th>Metric</th><th>Value</th><th>Weight</th></tr>
+            </thead>
+            <tbody id="metrics-body"></tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <details>
+            <summary>How this works</summary>
+            <p>
+              The engine scores movement <b>dynamics</b>, not geometry: how
+              angular velocity varies, how drawing speed modulates around the
+              circle, tremor structure, start/end ramps, and timestamp
+              irregularity. A mathematically perfect circle with human
+              dynamics scores HUMAN_LIKE; a sloppy circle with machine
+              dynamics scores SUSPICIOUS.
+            </p>
+            <p>
+              INCONCLUSIVE means the engine refuses to guess: the stroke was
+              too short, not circle-like, or the evidence was ambiguous.
+              SUSPICIOUS is a probabilistic signal, never proof &mdash; use
+              it to trigger a fallback challenge, not to block an account.
+            </p>
+          </details>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      circle-human-detector v1.0.0 &mdash; generated by
+      <code>npm run build:demo</code>. Behavioral, not geometric: an
+      imperfect circle is not proof of humanity.
+    </footer>
+
+    <!--
+      The bundled engine (generated from dist/esm by scripts/build-demo.mjs).
+      Classic script on purpose: the page works from file:// with no
+      server and no network.
+    -->
+    <script>
+      "use strict";
+      /*__ENGINE_BUNDLE__*/
+    </script>
+
+    <script>
+      "use strict";
+      (function () {
+        var MIN_AUTO_ANALYZE_SAMPLES = 24;
+
+        var canvas = document.getElementById("surface");
+        var ctx = canvas.getContext("2d");
+        var sensitivitySelect = document.getElementById("sensitivity");
+        var analyzeButton = document.getElementById("analyze");
+        var clearButton = document.getElementById("clear");
+        var botCleanButton = document.getElementById("bot-clean");
+        var botNoisyButton = document.getElementById("bot-noisy");
+        var hint = document.getElementById("hint");
+        var verdictEl = document.getElementById("verdict");
+        var barsEl = document.getElementById("bars");
+        var statsEl = document.getElementById("stats");
+        var anomaliesCard = document.getElementById("anomalies-card");
+        var anomalyList = document.getElementById("anomaly-list");
+        var metricsCard = document.getElementById("metrics-card");
+        var metricsBody = document.getElementById("metrics-body");
+
+        var GUIDE = { x: canvas.width / 2, y: canvas.height / 2, r: 150 };
+        var replaying = false;
+
+        ctx.lineWidth = 2;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+
+        function drawGuide() {
+          ctx.save();
+          ctx.strokeStyle = "rgba(74, 157, 255, 0.16)";
+          ctx.setLineDash([4, 8]);
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(GUIDE.x, GUIDE.y, GUIDE.r, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        function clearCanvas() {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          drawGuide();
+        }
+
+        // The detector: captures pointer events from the canvas itself.
+        var detector = new CircleDetector({
+          target: canvas,
+          sensitivity: "balanced",
+        });
+        detector.start();
+
+        // Mirror the stroke onto the canvas while it is captured.
+        canvas.addEventListener("pointerdown", function (e) {
+          if (replaying) return;
+          ctx.strokeStyle = "#e6e9ef";
+          ctx.beginPath();
+          ctx.moveTo(e.offsetX, e.offsetY);
+        });
+        canvas.addEventListener("pointermove", function (e) {
+          if (replaying || e.buttons === 0) return;
+          ctx.lineTo(e.offsetX, e.offsetY);
+          ctx.stroke();
+        });
+
+        canvas.addEventListener("pointerup", function () {
+          if (replaying) return;
+          if (detector.getSamples().length >= MIN_AUTO_ANALYZE_SAMPLES) {
+            runAnalyze();
+          } else {
+            setHint("Draw a fuller circle so there is enough data to analyze.");
+          }
+        });
+
+        analyzeButton.addEventListener("click", function () {
+          if (detector.getSamples().length >= 2) runAnalyze();
+        });
+
+        clearButton.addEventListener("click", clearAll);
+
+        sensitivitySelect.addEventListener("change", function () {
+          // Re-score the same captured samples under the new preset.
+          if (detector.getSamples().length >= 2) runAnalyze();
+        });
+
+        function currentSensitivity() {
+          return sensitivitySelect.value;
+        }
+
+        function runAnalyze() {
+          var result;
+          try {
+            result = detector.analyze({ sensitivity: currentSensitivity() });
+          } catch (err) {
+            setHint("Analysis failed: " + (err && err.message ? err.message : String(err)));
+            return;
+          }
+          render(result);
+        }
+
+        // ----- Synthetic machine replay --------------------------------
+        // Both replays feed events through the exact same recordEvent
+        // pipeline a script would use, then get analyzed like user input.
+
+        function gaussian() {
+          var u = 0, v = 0;
+          while (u === 0) u = Math.random();
+          while (v === 0) v = Math.random();
+          return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+        }
+
+        function buildBotEvents(variant) {
+          var events = [];
+          var turns = 1.05;
+          var durationMs = 1400;
+          var dt = 9; // uniform timer cadence, like a fixed-interval script
+          var n = Math.floor(durationMs / dt);
+          var cx = GUIDE.x, cy = GUIDE.y, r = GUIDE.r;
+          var startAngle = -Math.PI / 2;
+          var t = 1000;
+
+          // No ramps: machines start and end at full speed.
+          for (var i = 0; i <= n; i++) {
+            var frac = i / n;
+            var angle = startAngle + frac * turns * 2 * Math.PI;
+            var x = cx + r * Math.cos(angle);
+            var y = cy + r * Math.sin(angle);
+            if (variant === "noisy") {
+              x += gaussian() * 1.1;
+              y += gaussian() * 1.1;
+            }
+            var type = i === 0 ? "pointerdown" : (i === n ? "pointerup" : "pointermove");
+            var ev = { type: type, x: x, y: y, t: t + i * dt };
+            if (variant === "noisy") {
+              ev.t += Math.round((Math.random() - 0.5) * 6);
+            }
+            events.push(ev);
+          }
+          return events;
+        }
+
+        function replayBot(variant) {
+          if (replaying) return;
+          var events = buildBotEvents(variant);
+          replaying = true;
+          setButtonsDisabled(true);
+          clearAll();
+          setHint("Replaying a synthetic machine stroke...");
+
+          var i = 0;
+          var last = null;
+          function step() {
+            // Feed a few events per frame so the replay is visible.
+            for (var k = 0; k < 3 && i < events.length; k++, i++) {
+              var ev = events[i];
+              detector.recordEvent(ev);
+              if (last !== null) {
+                ctx.strokeStyle = variant === "noisy" ? "#ff9d5d" : "#ff5d5d";
+                ctx.beginPath();
+                ctx.moveTo(last.x, last.y);
+                ctx.lineTo(ev.x, ev.y);
+                ctx.stroke();
+              } else {
+                ctx.strokeStyle = variant === "noisy" ? "#ff9d5d" : "#ff5d5d";
+                ctx.beginPath();
+                ctx.moveTo(ev.x, ev.y);
+              }
+              last = { x: ev.x, y: ev.y };
+            }
+            if (i < events.length) {
+              requestAnimationFrame(step);
+            } else {
+              replaying = false;
+              setButtonsDisabled(false);
+              setHint(
+                variant === "noisy"
+                  ? "Noisy bot: constant angular velocity with injected white noise. Noise fakes amplitude but not temporal structure."
+                  : "Scripted bot: constant angular velocity on a fixed-interval timer. Textbook machine signatures."
+              );
+              runAnalyze();
+            }
+          }
+          requestAnimationFrame(step);
+        }
+
+        botCleanButton.addEventListener("click", function () { replayBot("clean"); });
+        botNoisyButton.addEventListener("click", function () { replayBot("noisy"); });
+
+        function setButtonsDisabled(disabled) {
+          [analyzeButton, clearButton, botCleanButton, botNoisyButton].forEach(function (b) {
+            b.disabled = disabled;
+          });
+        }
+
+        // ----- Result rendering ------------------------------------------
+
+        function render(result) {
+          var cls = result.classification;
+          verdictEl.textContent = cls;
+          verdictEl.className = "verdict-badge " + cls;
+
+          barsEl.hidden = false;
+          setBar("score-bar", "score-value", result.score);
+          setBar("conf-bar", "conf-value", result.confidence);
+
+          var m = result.metrics;
+          statsEl.hidden = false;
+          statsEl.textContent =
+            m.sampleCount + " samples, " +
+            m.durationMs.toFixed(0) + " ms, " +
+            m.geometry.coverageTurns.toFixed(2) + " turns" +
+            (m.droppedSamples > 0 ? ", " + m.droppedSamples + " dropped" : "") +
+            (m.strokeCount > 1 ? ", " + m.strokeCount + " strokes" : "");
+
+          if (result.anomalies.length === 0) {
+            anomaliesCard.hidden = cls !== "HUMAN_LIKE";
+            if (cls === "HUMAN_LIKE") {
+              anomalyList.replaceChildren();
+              var li = document.createElement("li");
+              li.textContent = "No machine signatures or data-quality problems detected.";
+              anomalyList.appendChild(li);
+            }
+          } else {
+            anomaliesCard.hidden = false;
+            anomalyList.replaceChildren(
+              result.anomalies.map(function (a) {
+                var li = document.createElement("li");
+                var sev = document.createElement("span");
+                sev.className = "sev " + a.severity;
+                sev.textContent = a.severity;
+                li.appendChild(sev);
+                var code = document.createElement("b");
+                code.textContent = a.code;
+                li.appendChild(code);
+                li.appendChild(document.createTextNode(" - " + a.detail));
+                return li;
+              })
+            );
+          }
+
+          metricsCard.hidden = false;
+          metricsBody.replaceChildren(
+            result.contributions.map(function (c) {
+              var tr = document.createElement("tr");
+              if (c.weight === 0) tr.className = "zero-weight";
+
+              var tdName = document.createElement("td");
+              tdName.textContent = c.label;
+              if (c.note) {
+                var note = document.createElement("span");
+                note.className = "note";
+                note.textContent = c.note;
+                tdName.appendChild(note);
+              }
+              tr.appendChild(tdName);
+
+              var tdValue = document.createElement("td");
+              tdValue.className = "num";
+              var track = document.createElement("span");
+              track.className = "mini-track";
+              var fill = document.createElement("span");
+              fill.className = "mini-fill";
+              fill.style.width = (c.value * 100).toFixed(1) + "%";
+              track.appendChild(fill);
+              tdValue.appendChild(track);
+              tdValue.appendChild(document.createTextNode(c.value.toFixed(2)));
+              tr.appendChild(tdValue);
+
+              var tdWeight = document.createElement("td");
+              tdWeight.className = "num";
+              tdWeight.textContent = c.weight.toFixed(2);
+              tr.appendChild(tdWeight);
+
+              return tr;
+            })
+          );
+        }
+
+        function setBar(barId, valueId, value) {
+          document.getElementById(barId).style.width = (value * 100).toFixed(1) + "%";
+          document.getElementById(valueId).textContent = value.toFixed(3);
+        }
+
+        function setHint(text) {
+          hint.textContent = text;
+        }
+
+        function clearAll() {
+          detector.reset();
+          clearCanvas();
+          verdictEl.textContent = "DRAW A CIRCLE";
+          verdictEl.className = "verdict-badge INCONCLUSIVE";
+          barsEl.hidden = true;
+          statsEl.hidden = true;
+          anomaliesCard.hidden = true;
+          metricsCard.hidden = true;
+          setHint("The faint ring is only a visual guide - the analysis never measures how well you traced it.");
+        }
+
+        clearCanvas();
+      })();
+    </script>
+  </body>
+</html>

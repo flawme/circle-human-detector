@@ -1,0 +1,71 @@
+{
+  "name": "circle-human-detector",
+  "version": "1.0.0",
+  "description": "Behavioral analysis of circle-drawing interactions to estimate whether they were produced by a human or a machine. Pure analysis engine plus an optional browser pointer-event collector.",
+  "keywords": [
+    "captcha",
+    "bot-detection",
+    "behavioral-analysis",
+    "human-verification",
+    "circle",
+    "pointer-events",
+    "typescript",
+    "fraud-prevention"
+  ],
+  "type": "module",
+  "license": "MIT",
+  "author": "flawme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/flawme/circle-human-detector.git"
+  },
+  "bugs": {
+    "url": "https://github.com/flawme/circle-human-detector/issues"
+  },
+  "homepage": "https://github.com/flawme/circle-human-detector#readme",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/esm/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    },
+    "./analyze": {
+      "types": "./dist/esm/analyze.d.ts",
+      "import": "./dist/esm/analyze.js",
+      "require": "./dist/cjs/analyze.js"
+    },
+    "./collector": {
+      "types": "./dist/esm/collector.d.ts",
+      "import": "./dist/esm/collector.js",
+      "require": "./dist/cjs/collector.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "docs",
+    "examples",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json && tsc -p tsconfig.cjs.json && node scripts/finalize-build.mjs",
+    "test": "node --test \"test/*.test.ts\"",
+    "prepublishOnly": "npm run typecheck && npm run build && npm test",
+    "evaluate": "npm run build && node scripts/evaluate.mjs",
+    "evaluate:real": "node scripts/evaluate-real.mts",
+    "build:demo": "npm run build && node scripts/build-demo.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2"
+  }
+}

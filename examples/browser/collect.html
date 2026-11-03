@@ -1,0 +1,467 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Circle capture collector — circle-human-detector</title>
+<!--
+  Consent-gated real-capture collector for circle-human-detector.
+
+  This page is deliberately self-contained: one HTML file, one classic
+  inline script, no imports, no build step. It works when opened
+  directly from disk (file://) where module imports of a built bundle
+  do not. It makes ZERO network requests — no fetch, no XHR, no
+  beacons, no external resources. Samples exist only in this tab's
+  memory until you export them to a local JSON file yourself.
+
+  Recording is consent-gated IN CODE: no pointer listeners are
+  attached until the explicit consent button is clicked, and the
+  Withdraw button detaches every listener and deletes all recorded
+  samples immediately.
+
+  Output shape (one JSON file per attempt), aligned with the engine's
+  PointerSample contract (src/types.ts):
+
+    {
+      "label": "human",            // free-text label, e.g. "human"
+      "consent": true,             // always true: export requires consent
+      "capturedAt": "2026-01-01T00:00:00.000Z",
+      "samples": [
+        { "x": 240, "y": 100, "t": 123.4, "pointerType": "mouse",
+          "pressure": 0.5, "stroke": 0 }
+      ]
+    }
+
+  Evaluation: drop exported files into a folder and run
+  `npm run evaluate:real <folder>`.
+-->
+<style>
+  :root {
+    color-scheme: light;
+    --ink: #1a1d23;
+    --muted: #5b6372;
+    --line: #d8dde6;
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --accent: #0b5cad;
+    --danger: #a11212;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  code {
+    font: 13px/1.4 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    background: #eceff3;
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+
+  /* Consent gate: the only thing visible until consent is given. */
+  .gate {
+    position: fixed;
+    inset: 0;
+    background: rgba(246, 247, 249, 0.96);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    z-index: 10;
+  }
+  .gate[hidden] { display: none; }
+  .gate-card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 22px 24px;
+    max-width: 560px;
+    max-height: 100%;
+    overflow: auto;
+  }
+  .gate-card h2 { font-size: 17px; margin: 0 0 10px; }
+  .gate-card ul { margin: 0 0 14px; padding-left: 20px; }
+  .gate-card li { margin-bottom: 8px; }
+  .gate-error { color: var(--danger); margin: 10px 0 0; }
+
+  .panel {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 18px 20px;
+    margin-bottom: 16px;
+  }
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+  }
+  .row + .row { margin-top: 12px; }
+  label.field { display: flex; align-items: center; gap: 8px; }
+  input#label {
+    font: inherit;
+    padding: 5px 8px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    width: 140px;
+  }
+  #status {
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+  }
+  canvas#surface {
+    display: block;
+    width: 100%;
+    max-width: 480px;
+    aspect-ratio: 1 / 1;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    touch-action: none; /* keep touch strokes on the surface */
+    cursor: crosshair;
+  }
+  .hint { color: var(--muted); margin: 10px 0 0; }
+  button {
+    font: inherit;
+    padding: 7px 14px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: #fff;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  button:hover { border-color: #aab4c4; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { background: #094d8f; }
+  button.danger { color: var(--danger); border-color: #e3c7c7; }
+  button.danger:hover { border-color: var(--danger); }
+  .note {
+    min-height: 1.4em;
+    color: var(--muted);
+    margin: 10px 0 0;
+    overflow-wrap: anywhere;
+  }
+  .note.err { color: var(--danger); }
+  footer { color: var(--muted); font-size: 13px; margin-top: 28px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Circle capture collector</h1>
+  <p class="sub">
+    Consent-gated pointer capture for
+    <code>circle-human-detector</code>. Nothing is recorded before you
+    consent; nothing is ever transmitted.
+  </p>
+
+  <section id="gate" class="gate" aria-labelledby="gate-title">
+    <div class="gate-card">
+      <h2 id="gate-title">Before recording can start</h2>
+      <ul>
+        <li>
+          <strong>What is captured:</strong> while you draw on the canvas,
+          this page records pointer x/y positions, millisecond timestamps,
+          pressure, pointer type (mouse/touch/pen) and contact width.
+        </li>
+        <li>
+          <strong>Where it goes:</strong> nowhere. This page makes no
+          network requests. Samples stay in this tab's memory until
+          <em>you</em> export them to a local JSON file.
+        </li>
+        <li>
+          <strong>Why:</strong> the exported file is a labeled real capture
+          for evaluating the detector. It is behavioral, biometric-adjacent
+          movement data — share it only with datasets you trust.
+        </li>
+        <li>
+          <strong>Withdraw any time:</strong> the Withdraw button stops
+          recording and deletes every recorded sample immediately.
+        </li>
+      </ul>
+      <button id="consent-btn" class="primary">I consent — start recording</button>
+      <p id="gate-error" class="gate-error" aria-live="polite"></p>
+    </div>
+  </section>
+
+  <main id="app" hidden>
+    <div class="panel">
+      <div class="row">
+        <label class="field">
+          Label
+          <input id="label" type="text" value="human" autocomplete="off" spellcheck="false">
+        </label>
+        <span id="status">0 samples &middot; 0 ms &middot; stroke 0</span>
+      </div>
+      <div class="row">
+        <canvas id="surface" width="480" height="480"
+                aria-label="Drawing surface: draw a circle here"></canvas>
+      </div>
+      <p class="hint">
+        Draw a circle in one smooth motion — at least one full turn,
+        comfortably 1&ndash;3 seconds. Multiple strokes are recorded with
+        an incrementing stroke index (the engine flags them).
+      </p>
+      <div class="row">
+        <button id="export-btn" class="primary">Export JSON</button>
+        <button id="new-btn">New attempt</button>
+        <button id="withdraw-btn" class="danger">Withdraw consent</button>
+      </div>
+      <p id="note" class="note" aria-live="polite"></p>
+    </div>
+  </main>
+
+  <footer>
+    <p>
+      Self-contained page: works from <code>file://</code>, zero network
+      requests. Evaluate exported captures with
+      <code>npm run evaluate:real <folder></code>.
+    </p>
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  // Classic script on purpose: this page must run when opened directly
+  // from disk, where module imports of a built bundle fail. There is no
+  // fetch/XHR/beacon anywhere in this file — verify by searching for
+  // "fetch", "XMLHttpRequest", "sendBeacon", "http".
+
+  var gate = document.getElementById("gate");
+  var consentBtn = document.getElementById("consent-btn");
+  var gateError = document.getElementById("gate-error");
+  var app = document.getElementById("app");
+  var labelInput = document.getElementById("label");
+  var statusEl = document.getElementById("status");
+  var surface = document.getElementById("surface");
+  var exportBtn = document.getElementById("export-btn");
+  var newBtn = document.getElementById("new-btn");
+  var withdrawBtn = document.getElementById("withdraw-btn");
+  var note = document.getElementById("note");
+  var ctx = surface.getContext("2d");
+
+  // ---- state ---------------------------------------------------------
+  var recording = false;      // gates EVERY record path
+  var samples = [];           // PointerSample[]
+  var strokeIndex = 0;        // 0 for the first stroke, +1 per pointerup
+  var drawing = false;        // a stroke is currently open
+  var activePointerId = null; // primary-pointer tracking
+  var lastX = 0;
+  var lastY = 0;
+
+  if (!window.PointerEvent) {
+    consentBtn.disabled = true;
+    gateError.textContent =
+      "This browser does not support Pointer Events, which the " +
+      "capture needs. Use a current browser (Chrome, Edge, Firefox, Safari).";
+    return;
+  }
+
+  // ---- status line ----------------------------------------------------
+  function updateStatus() {
+    var duration = samples.length >= 2
+      ? samples[samples.length - 1].t - samples[0].t
+      : 0;
+    statusEl.textContent =
+      samples.length + " samples \u00b7 " +
+      Math.round(duration) + " ms \u00b7 stroke " + strokeIndex;
+  }
+
+  function setNote(text, isError) {
+    note.textContent = text;
+    note.className = isError ? "note err" : "note";
+  }
+
+  // ---- recording (mirrors src/collector.ts semantics) ------------------
+  function recordSample(event, stroke) {
+    if (!recording) return; // defense in depth: never record unconsented
+    var rect = surface.getBoundingClientRect();
+    var x = event.clientX - rect.left;
+    var y = event.clientY - rect.top;
+    // Coordinates are drawing-surface pixels (CSS pixels), the space
+    // the engine expects. Never clamp: off-surface motion is honest data.
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    if (!Number.isFinite(event.timeStamp)) return;
+    var sample = { x: x, y: y, t: event.timeStamp, stroke: stroke };
+    if (typeof event.pointerType === "string" && event.pointerType) {
+      sample.pointerType = event.pointerType;
+    }
+    if (typeof event.pressure === "number") {
+      sample.pressure = event.pressure;
+    }
+    if (typeof event.width === "number" && event.width > 0) {
+      sample.width = event.width;
+    }
+    samples.push(sample);
+  }
+
+  function onPointerDown(event) {
+    if (!recording) return;
+    if (activePointerId !== null) return; // primary pointer owns the stroke
+    if (!Number.isFinite(event.pointerId)) return;
+    activePointerId = event.pointerId;
+    drawing = true;
+    try { surface.setPointerCapture(event.pointerId); } catch (e) { /* best-effort */ }
+    var rect = surface.getBoundingClientRect();
+    var downX = event.clientX - rect.left;
+    var downY = event.clientY - rect.top;
+    recordSample(event, strokeIndex);
+    lastX = downX;
+    lastY = downY;
+    updateStatus();
+  }
+
+  function onPointerMove(event) {
+    if (!recording || !drawing) return;
+    if (event.pointerId !== activePointerId) return;
+    recordSample(event, strokeIndex);
+    var rect = surface.getBoundingClientRect();
+    var x = event.clientX - rect.left;
+    var y = event.clientY - rect.top;
+    // Draw one segment per event; re-stroking the whole path each
+    // move would cost O(n^2) on long strokes.
+    ctx.beginPath();
+    ctx.moveTo(lastX, lastY);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    lastX = x;
+    lastY = y;
+    updateStatus();
+  }
+
+  function onPointerUp(event) {
+    if (!recording || !drawing) return;
+    if (event.pointerId !== activePointerId) return;
+    recordSample(event, strokeIndex);
+    // Contract (src/types.ts): stroke increments AFTER each pointerup.
+    strokeIndex++;
+    drawing = false;
+    activePointerId = null;
+    try { surface.releasePointerCapture(event.pointerId); } catch (e) { /* best-effort */ }
+    updateStatus();
+  }
+
+  // Attach/detach keep one list so withdrawal removes exactly what
+  // consent added — recording is impossible while detached.
+  function attachCapture() {
+    surface.addEventListener("pointerdown", onPointerDown);
+    surface.addEventListener("pointermove", onPointerMove);
+    surface.addEventListener("pointerup", onPointerUp);
+    surface.addEventListener("pointercancel", onPointerUp);
+  }
+
+  function detachCapture() {
+    surface.removeEventListener("pointerdown", onPointerDown);
+    surface.removeEventListener("pointermove", onPointerMove);
+    surface.removeEventListener("pointerup", onPointerUp);
+    surface.removeEventListener("pointercancel", onPointerUp);
+  }
+
+  function clearCanvas() {
+    ctx.clearRect(0, 0, surface.width, surface.height);
+  }
+
+  function resetAttempt() {
+    samples = [];
+    strokeIndex = 0;
+    drawing = false;
+    activePointerId = null;
+    clearCanvas();
+    updateStatus();
+  }
+
+  // ---- consent lifecycle ----------------------------------------------
+  consentBtn.addEventListener("click", function () {
+    if (recording) return;
+    recording = true;
+    attachCapture(); // the ONLY place listeners are ever added
+    gate.hidden = true;
+    app.hidden = false;
+    setNote("Recording enabled. Draw on the canvas.", false);
+    updateStatus();
+  });
+
+  withdrawBtn.addEventListener("click", function withdraw() {
+    recording = false;
+    detachCapture();
+    resetAttempt(); // purge every recorded sample immediately
+    setNote("", false);
+    app.hidden = true;
+    gate.hidden = false;
+  });
+
+  newBtn.addEventListener("click", function () {
+    if (!recording) return;
+    resetAttempt();
+    setNote("New attempt started — previous samples discarded.", false);
+  });
+
+  // ---- export (local file download; the only way data leaves memory) ---
+  function validateSamples(list) {
+    var problems = [];
+    for (var i = 0; i < list.length; i++) {
+      var s = list[i];
+      if (!Number.isFinite(s.x) || !Number.isFinite(s.y) || !Number.isFinite(s.t)) {
+        problems.push("sample " + i + ": non-finite coordinate or timestamp");
+      }
+      if (i > 0 && s.t <= list[i - 1].t) {
+        problems.push("sample " + i + ": non-increasing timestamp");
+      }
+    }
+    return problems;
+  }
+
+  exportBtn.addEventListener("click", function () {
+    if (!recording) return; // consent is a precondition of export
+    if (samples.length === 0) {
+      setNote("Nothing recorded yet — draw on the canvas first.", true);
+      return;
+    }
+    var problems = validateSamples(samples);
+    if (problems.length > 0) {
+      // Real browsers guarantee monotonic timestamps, so this indicates
+      // a capture bug: refuse to export rather than ship bad data.
+      setNote("Refusing export — " + problems.length +
+              " defect(s): " + problems[0] +
+              (problems.length > 1 ? " (and more)" : ""), true);
+      return;
+    }
+    var label = labelInput.value.trim() || "human";
+    var payload = {
+      label: label,
+      consent: true,
+      capturedAt: new Date().toISOString(),
+      samples: samples
+    };
+    var blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json"
+    });
+    var stamp = new Date();
+    function pad(n) { return (n < 10 ? "0" : "") + n; }
+    var fileStamp = stamp.getUTCFullYear() +
+      pad(stamp.getUTCMonth() + 1) + pad(stamp.getUTCDate()) + "-" +
+      pad(stamp.getUTCHours()) + pad(stamp.getUTCMinutes()) +
+      pad(stamp.getUTCSeconds()) + "-" +
+      String(stamp.getUTCMilliseconds()).padStart(3, "0");
+    var safeLabel = label.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(0, 40) || "human";
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "circle-capture-" + safeLabel + "-" + fileStamp + ".json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    setNote("Exported " + samples.length + " samples as " + a.download +
+            " (label: " + label + "). The file is on your disk only.", false);
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>circle-human-detector — browser demo</title>
+    <style>
+      /* Plain styling on purpose: this demo is about the API, not the CSS. */
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 720px;
+        margin: 40px auto;
+        padding: 0 16px;
+        color: #1a1a1a;
+      }
+      h1 { font-size: 1.3rem; }
+      canvas {
+        display: block;
+        margin: 16px 0;
+        border: 2px solid #999;
+        border-radius: 8px;
+        background: #fdfdfd;
+        /* Required for touch drawing: prevents scrolling mid-stroke. */
+        touch-action: none;
+      }
+      .controls { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
+      button { font-size: 1rem; padding: 6px 16px; cursor: pointer; }
+      .verdict { padding: 10px 14px; border-radius: 8px; margin: 8px 0; font-weight: 600; }
+      .verdict.HUMAN_LIKE { background: #e6f6e6; color: #14501a; }
+      .verdict.SUSPICIOUS { background: #fde8e8; color: #7c1d1d; }
+      .verdict.INCONCLUSIVE { background: #f4f0e6; color: #6b5a1e; }
+      .bars { margin: 12px 0; }
+      .bar-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+      .bar-row label { width: 110px; font-size: 0.9rem; }
+      .bar-track { flex: 1; height: 12px; background: #eee; border-radius: 6px; overflow: hidden; }
+      .bar-fill { height: 100%; background: #4a7dc9; }
+      .anomalies li { font-size: 0.9rem; margin: 2px 0; }
+      .muted { color: #666; font-size: 0.85rem; }
+    </style>
+  </head>
+  <body>
+    <h1>circle-human-detector — draw a circle</h1>
+    <p class="muted">
+      Draw one circle with your mouse, finger, or stylus, then release.
+      The behavioral analysis runs entirely on this page — no data is
+      sent anywhere.
+    </p>
+
+    <div class="controls">
+      <label for="sensitivity">Sensitivity</label>
+      <select id="sensitivity">
+        <option value="relaxed">relaxed</option>
+        <option value="balanced" selected>balanced</option>
+        <option value="strict">strict</option>
+      </select>
+      <button id="clear">Clear</button>
+    </div>
+
+    <canvas id="surface" width="480" height="360"></canvas>
+
+    <div id="verdict" class="verdict INCONCLUSIVE" hidden></div>
+    <div id="bars" class="bars" hidden>
+      <div class="bar-row">
+        <label>human-likelihood</label>
+        <div class="bar-track"><div class="bar-fill" id="score-bar"></div></div>
+        <span id="score-value"></span>
+      </div>
+      <div class="bar-row">
+        <label>confidence</label>
+        <div class="bar-track"><div class="bar-fill" id="conf-bar"></div></div>
+        <span id="conf-value"></span>
+      </div>
+    </div>
+    <div id="anomalies" hidden>
+      <h3>Anomalies</h3>
+      <ul id="anomaly-list"></ul>
+    </div>
+
+    <script type="module" src="./example.js"></script>
+  </body>
+</html>

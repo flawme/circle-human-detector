@@ -1,0 +1,2546 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>circle-human-detector &mdash; interactive demo</title>
+    <style>
+      :root {
+        --bg: #0e1116;
+        --panel: #161b23;
+        --border: #232a35;
+        --text: #e6e9ef;
+        --muted: #8b94a3;
+        --accent: #4a9dff;
+        --green: #3ecf6f;
+        --red: #ff5d5d;
+        --amber: #f2c14e;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        line-height: 1.45;
+      }
+      header {
+        max-width: 1060px;
+        margin: 0 auto;
+        padding: 28px 20px 6px;
+      }
+      h1 { font-size: 1.35rem; margin: 0 0 4px; }
+      .tagline { color: var(--muted); font-size: 0.92rem; margin: 0; }
+      .layout {
+        max-width: 1060px;
+        margin: 0 auto;
+        padding: 12px 20px 8px;
+        display: grid;
+        grid-template-columns: minmax(0, 1.15fr) minmax(300px, 1fr);
+        gap: 16px;
+        align-items: start;
+      }
+      @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 14px;
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+      select, button {
+        font: inherit;
+        color: var(--text);
+        background: #1c232e;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 7px 14px;
+        cursor: pointer;
+      }
+      button:hover { border-color: var(--accent); }
+      button:disabled { opacity: 0.45; cursor: default; }
+      button.primary { background: #17324f; border-color: #274d75; }
+      .botrow {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        margin-top: 12px;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        height: auto;
+        background: #0b0e13;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        /* Required for touch drawing: prevents scrolling mid-stroke. */
+        touch-action: none;
+        cursor: crosshair;
+      }
+      .hint { color: var(--muted); font-size: 0.88rem; margin: 10px 2px 0; min-height: 1.3em; }
+      .stack { display: grid; gap: 16px; }
+      .verdict-badge {
+        display: inline-block;
+        font-weight: 700;
+        font-size: 1.05rem;
+        padding: 6px 14px;
+        border-radius: 8px;
+        letter-spacing: 0.02em;
+      }
+      .verdict-badge.HUMAN_LIKE { background: rgba(62, 207, 111, 0.14); color: var(--green); border: 1px solid rgba(62, 207, 111, 0.4); }
+      .verdict-badge.SUSPICIOUS { background: rgba(255, 93, 93, 0.12); color: var(--red); border: 1px solid rgba(255, 93, 93, 0.4); }
+      .verdict-badge.INCONCLUSIVE { background: rgba(242, 193, 78, 0.1); color: var(--amber); border: 1px solid rgba(242, 193, 78, 0.35); }
+      .bar-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+      .bar-row label { width: 88px; color: var(--muted); font-size: 0.88rem; }
+      .bar-track { flex: 1; height: 10px; background: #0b0e13; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+      .bar-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.25s ease; }
+      .bar-value { width: 44px; text-align: right; font-variant-numeric: tabular-nums; font-size: 0.9rem; }
+      .stats { color: var(--muted); font-size: 0.86rem; margin: 10px 0 0; }
+      h3 { font-size: 0.95rem; margin: 0 0 8px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
+      ul.anomaly-list { list-style: none; margin: 0; padding: 0; }
+      ul.anomaly-list li {
+        padding: 8px 10px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        margin-bottom: 8px;
+        font-size: 0.88rem;
+      }
+      ul.anomaly-list li b { font-variant-numeric: tabular-nums; }
+      .sev { font-size: 0.72rem; font-weight: 700; padding: 1px 7px; border-radius: 5px; margin-right: 6px; vertical-align: 1px; }
+      .sev.high { background: rgba(255, 93, 93, 0.16); color: var(--red); }
+      .sev.medium { background: rgba(242, 193, 78, 0.12); color: var(--amber); }
+      .sev.low { background: rgba(139, 148, 163, 0.14); color: var(--muted); }
+      .muted { color: var(--muted); }
+      table.metrics { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+      table.metrics th {
+        text-align: left; color: var(--muted); font-weight: 600;
+        padding: 4px 8px; border-bottom: 1px solid var(--border); font-size: 0.78rem;
+        text-transform: uppercase; letter-spacing: 0.05em;
+      }
+      table.metrics td { padding: 5px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+      table.metrics td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+      .mini-track { display: inline-block; width: 54px; height: 6px; background: #0b0e13; border-radius: 4px; vertical-align: 1px; margin-right: 6px; }
+      .mini-fill { height: 100%; border-radius: 4px; background: var(--accent); }
+      .zero-weight { opacity: 0.45; }
+      .note { color: var(--muted); font-size: 0.78rem; display: block; margin-top: 2px; }
+      details { color: var(--muted); font-size: 0.88rem; }
+      details summary { cursor: pointer; color: var(--text); font-weight: 600; font-size: 0.92rem; margin-bottom: 6px; }
+      details p { margin: 6px 0; }
+      footer {
+        max-width: 1060px; margin: 0 auto; padding: 10px 20px 30px;
+        color: var(--muted); font-size: 0.82rem;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>circle-human-detector</h1>
+      <p class="tagline">
+        Behavioral bot detection for circle drawing. Runs entirely on this
+        page &mdash; nothing is sent anywhere. Draw one circle with your
+        mouse, finger, or stylus, then release.
+      </p>
+    </header>
+
+    <main class="layout">
+      <section>
+        <div class="controls">
+          <label class="muted" for="sensitivity">Sensitivity</label>
+          <select id="sensitivity">
+            <option value="relaxed">relaxed</option>
+            <option value="balanced" selected>balanced</option>
+            <option value="strict">strict</option>
+          </select>
+          <button id="analyze" class="primary">Re-analyze</button>
+          <button id="clear">Clear</button>
+        </div>
+
+        <canvas id="surface" width="640" height="480"></canvas>
+
+        <div class="botrow">
+          <span>Or replay a synthetic machine:</span>
+          <button id="bot-clean">Bot: scripted</button>
+          <button id="bot-noisy">Bot: noisy</button>
+        </div>
+        <p class="hint" id="hint">The faint ring is only a visual guide &mdash; the analysis never measures how well you traced it.</p>
+      </section>
+
+      <section class="stack">
+        <div class="card" id="verdict-card">
+          <span class="verdict-badge INCONCLUSIVE" id="verdict">DRAW A CIRCLE</span>
+          <div id="bars" hidden>
+            <div class="bar-row">
+              <label>human-likelihood</label>
+              <div class="bar-track"><div class="bar-fill" id="score-bar"></div></div>
+              <span class="bar-value" id="score-value"></span>
+            </div>
+            <div class="bar-row">
+              <label>confidence</label>
+              <div class="bar-track"><div class="bar-fill" id="conf-bar"></div></div>
+              <span class="bar-value" id="conf-value"></span>
+            </div>
+          </div>
+          <p class="stats" id="stats" hidden></p>
+        </div>
+
+        <div class="card" id="anomalies-card" hidden>
+          <h3>Signals detected</h3>
+          <ul class="anomaly-list" id="anomaly-list"></ul>
+        </div>
+
+        <div class="card" id="metrics-card" hidden>
+          <h3>Per-metric contributions</h3>
+          <table class="metrics">
+            <thead>
+              <tr><th>Metric</th><th>Value</th><th>Weight</th></tr>
+            </thead>
+            <tbody id="metrics-body"></tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <details>
+            <summary>How this works</summary>
+            <p>
+              The engine scores movement <b>dynamics</b>, not geometry: how
+              angular velocity varies, how drawing speed modulates around the
+              circle, tremor structure, start/end ramps, and timestamp
+              irregularity. A mathematically perfect circle with human
+              dynamics scores HUMAN_LIKE; a sloppy circle with machine
+              dynamics scores SUSPICIOUS.
+            </p>
+            <p>
+              INCONCLUSIVE means the engine refuses to guess: the stroke was
+              too short, not circle-like, or the evidence was ambiguous.
+              SUSPICIOUS is a probabilistic signal, never proof &mdash; use
+              it to trigger a fallback challenge, not to block an account.
+            </p>
+          </details>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      circle-human-detector v1.0.0 &mdash; generated by
+      <code>npm run build:demo</code>. Behavioral, not geometric: an
+      imperfect circle is not proof of humanity.
+    </footer>
+
+    <!--
+      The bundled engine (generated from dist/esm by scripts/build-demo.mjs).
+      Classic script on purpose: the page works from file:// with no
+      server and no network.
+    -->
+    <script>
+      "use strict";
+      /* ENGINE-BEGIN */
+// circle-human-detector engine, flattened from dist/esm by scripts/build-demo.mjs.
+// ---- dist/esm/errors.js -----------------------------------------
+/**
+ * Base error class for all errors thrown by this library.
+ * Carries a machine-readable `code` alongside the message.
+ */
+class CircleDetectorError extends Error {
+    code;
+    constructor(code, message) {
+        super(message);
+        this.name = "CircleDetectorError";
+        this.code = code;
+    }
+}
+
+// ---- dist/esm/engine/circle-fit.js -----------------------------------------
+/**
+ * Algebraic circle fitting (Kasa method).
+ *
+ * Fits x^2 + y^2 + D*x + E*y + F = 0 to the samples with linear least
+ * squares via the normal equations, solved with Cramer's rule. This is
+ * the standard closed-form circle fit: fast, deterministic, and good
+ * enough for a reference shape — the detector never treats fit residuals
+ * as proof of humanity, so suboptimality of the fit under heavy noise is
+ * acceptable.
+ */
+/**
+ * Fit a circle to points. Never throws; degenerate configurations
+ * (fewer than 3 points, coincident or exactly collinear points) return
+ * `ok: false` with zeroed fields.
+ */
+function fitCircle(points) {
+    const fail = { ok: false, cx: 0, cy: 0, r: 0, rmsError: 0 };
+    const n = points.length;
+    if (n < 3)
+        return fail;
+    // Sums for the normal equations.
+    let Sx = 0;
+    let Sy = 0;
+    let Sxx = 0;
+    let Syy = 0;
+    let Sxy = 0;
+    let Sxz = 0; // sum of x * (x^2 + y^2)
+    let Syz = 0; // sum of y * (x^2 + y^2)
+    let Sz = 0; // sum of (x^2 + y^2)
+    for (const p of points) {
+        const z = p.x * p.x + p.y * p.y;
+        Sx += p.x;
+        Sy += p.y;
+        Sxx += p.x * p.x;
+        Syy += p.y * p.y;
+        Sxy += p.x * p.y;
+        Sxz += p.x * z;
+        Syz += p.y * z;
+        Sz += z;
+    }
+    // Normal matrix M * [D, E, F]^T = [-Sxz, -Syz, -Sz]^T
+    // M = [[Sxx, Sxy, Sx], [Sxy, Syy, Sy], [Sx, Sy, n]]
+    const a11 = Sxx;
+    const a12 = Sxy;
+    const a13 = Sx;
+    const a21 = Sxy;
+    const a22 = Syy;
+    const a23 = Sy;
+    const a31 = Sx;
+    const a32 = Sy;
+    const a33 = n;
+    const det = a11 * (a22 * a33 - a23 * a32) -
+        a12 * (a21 * a33 - a23 * a31) +
+        a13 * (a21 * a32 - a22 * a31);
+    // Scale of the problem, used for a dimensionless degeneracy threshold.
+    // For n points on a circle of radius r, det(M) ~ n^3 * r^4 *independent
+    // of where the circle sits relative to the origin* (expand the normal
+    // matrix around the mean: the constant terms cancel). So the reference
+    // scale must come from the points' own spread, not their distance from
+    // the origin, or small circles drawn far from the origin get rejected.
+    const mx = Sx / n;
+    const my = Sy / n;
+    let vxx = 0;
+    let vyy = 0;
+    for (const p of points) {
+        const dx = p.x - mx;
+        const dy = p.y - my;
+        vxx += dx * dx;
+        vyy += dy * dy;
+    }
+    const spread2 = (vxx + vyy) / n; // ~ r^2 for a circle
+    if (!(spread2 > 0) || !Number.isFinite(det))
+        return fail;
+    const detThreshold = 1e-9 * n * n * n * spread2 * spread2;
+    if (Math.abs(det) <= detThreshold)
+        return fail;
+    const b1 = -Sxz;
+    const b2 = -Syz;
+    const b3 = -Sz;
+    // Cramer's rule: replace the corresponding column with b.
+    const detD = b1 * (a22 * a33 - a23 * a32) -
+        a12 * (b2 * a33 - a23 * b3) +
+        a13 * (b2 * a32 - a22 * b3);
+    const detE = a11 * (b2 * a33 - a23 * b3) -
+        b1 * (a21 * a33 - a23 * a31) +
+        a13 * (a21 * b3 - b2 * a31);
+    const detF = a11 * (a22 * b3 - b2 * a32) -
+        a12 * (a21 * b3 - b2 * a31) +
+        b1 * (a21 * a32 - a22 * a31);
+    const D = detD / det;
+    const E = detE / det;
+    const F = detF / det;
+    const cx = -D / 2;
+    const cy = -E / 2;
+    const r2 = cx * cx + cy * cy - F;
+    if (!Number.isFinite(r2) || r2 <= 0)
+        return fail;
+    const r = Math.sqrt(r2);
+    // Relative RMS residual of distances to the fitted radius.
+    let sumSq = 0;
+    for (const p of points) {
+        const dx = p.x - cx;
+        const dy = p.y - cy;
+        const d = Math.sqrt(dx * dx + dy * dy) - r;
+        sumSq += d * d;
+    }
+    const rmsError = Math.sqrt(sumSq / n) / r;
+    return { ok: true, cx, cy, r, rmsError };
+}
+
+// ---- dist/esm/engine/kinematics.js -----------------------------------------
+/**
+ * Per-step movement kinematics: time deltas, speeds, unwrapped angles,
+ * angular velocities, and the discrete "machine signature" detectors
+ * (collinear runs, constant-speed runs, direction reversals).
+ *
+ * All functions are pure and environment-agnostic.
+ */
+/** Smallest dt we ever divide by; guards duplicate timestamps. */
+const MIN_DT = 1e-6;
+/**
+ * Reduce an angular difference to (-pi, pi]. Dense pointer samples always
+ * move less than half a revolution per step, so this accumulates a full
+ * sweep correctly without a separate unwrapping pass.
+ */
+function principalAngle(d) {
+    const twoPi = 2 * Math.PI;
+    let a = d % twoPi;
+    if (a > Math.PI)
+        a -= twoPi;
+    if (a <= -Math.PI)
+        a += twoPi;
+    return a;
+}
+/**
+ * Unwrap a sequence of principal-value angles into a continuous sequence
+ * (each consecutive difference in (-pi, pi]). Useful for coverage checks.
+ */
+function unwrapAngles(angles) {
+    if (angles.length === 0)
+        return [];
+    const out = [angles[0]];
+    for (let i = 1; i < angles.length; i++) {
+        const prev = out[i - 1];
+        const cur = angles[i];
+        out.push(prev + principalAngle(cur - prev));
+    }
+    return out;
+}
+/**
+ * Compute step kinematics for ordered samples relative to a center point
+ * (the fitted circle center). Callers guarantee finite inputs.
+ */
+function computeKinematics(points, times, cx, cy) {
+    const n = points.length;
+    const dt = [];
+    const chord = [];
+    const speed = [];
+    const angle = [];
+    const dAngle = [];
+    const omega = [];
+    for (let i = 0; i < n; i++) {
+        const p = points[i];
+        angle.push(Math.atan2(p.y - cy, p.x - cx));
+    }
+    for (let i = 1; i < n; i++) {
+        const a = points[i - 1];
+        const b = points[i];
+        const d = Math.max(MIN_DT, times[i] - times[i - 1]);
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const c = Math.sqrt(dx * dx + dy * dy);
+        const da = principalAngle(angle[i] - angle[i - 1]);
+        dt.push(d);
+        chord.push(c);
+        speed.push(c / d);
+        dAngle.push(da);
+        omega.push(da / d);
+    }
+    const accel = [];
+    for (let i = 1; i < speed.length; i++) {
+        const ds = speed[i] - speed[i - 1];
+        const dtAvg = (dt[i - 1] + dt[i]) / 2;
+        accel.push(ds / Math.max(MIN_DT, dtAvg));
+    }
+    return { dt, chord, speed, accel, angle, dAngle, omega };
+}
+/**
+ * Flag within-stroke pauses: a gap counts when it is at least `pauseMs`
+ * and at least 2.5x the median inter-sample gap, so a slow but continuous
+ * capture rate is never misread as pausing.
+ */
+function findPauses(dt, pauseMs) {
+    const sorted = [...dt].sort((a, b) => a - b);
+    const med = sorted.length > 0 ? sorted[Math.floor(sorted.length / 2)] : 0;
+    return dt.map((d) => d >= pauseMs && d >= 2.5 * med && d > med);
+}
+/**
+ * Centered moving average with a window shrunk near the edges.
+ * `window` is rounded to odd and clamped to the series length.
+ */
+function smoothSeries(values, window) {
+    const n = values.length;
+    if (n === 0)
+        return [];
+    let w = Math.max(1, Math.round(window));
+    if (w % 2 === 0)
+        w += 1;
+    const half = (w - 1) / 2;
+    const out = [];
+    for (let i = 0; i < n; i++) {
+        let sum = 0;
+        let count = 0;
+        const lo = Math.max(0, i - half);
+        const hi = Math.min(n - 1, i + half);
+        for (let j = lo; j <= hi; j++) {
+            sum += values[j];
+            count++;
+        }
+        out.push(sum / count);
+    }
+    return out;
+}
+/**
+ * Longest run of consecutive point triples that are exactly collinear
+ * with equal step lengths — the signature of linear interpolation
+ * between waypoints. Both conditions are required so dense arcs of a
+ * genuine curve (small but nonzero turning) never trigger it.
+ *
+ * Returns the number of consecutive qualifying triples.
+ */
+function longestCollinearRun(points, opts) {
+    const areaTol = opts?.areaTol ?? 1e-6;
+    const chordTol = opts?.chordTol ?? 0.02;
+    const n = points.length;
+    let best = 0;
+    let run = 0;
+    for (let i = 1; i + 1 < n; i++) {
+        const a = points[i - 1];
+        const b = points[i];
+        const c = points[i + 1];
+        const ux = b.x - a.x;
+        const uy = b.y - a.y;
+        const vx = c.x - b.x;
+        const vy = c.y - b.y;
+        const lu = Math.hypot(ux, uy);
+        const lv = Math.hypot(vx, vy);
+        if (lu <= 0 || lv <= 0) {
+            run = 0;
+            continue;
+        }
+        // |u x v| / (|u||v|) = sin(angle between segments): 0 when collinear.
+        const sinAngle = Math.abs(ux * vy - uy * vx) / (lu * lv);
+        const chordRatio = Math.abs(lu - lv) / (lu + lv);
+        if (sinAngle < areaTol && chordRatio < chordTol) {
+            run++;
+            if (run > best)
+                best = run;
+        }
+        else {
+            run = 0;
+        }
+    }
+    return best;
+}
+/**
+ * Longest run of consecutive values that are identical within a relative
+ * tolerance — the signature of piecewise-constant generated data.
+ */
+function longestConstantRun(values, relTol) {
+    const n = values.length;
+    if (n < 2)
+        return 0;
+    let best = 0;
+    let run = 0;
+    const scale = Math.max(...values.map((v) => Math.abs(v)));
+    for (let i = 1; i < n; i++) {
+        const prev = values[i - 1];
+        const cur = values[i];
+        const tol = relTol * Math.max(scale, 1e-12);
+        if (Math.abs(cur - prev) <= tol) {
+            run++;
+            if (run > best)
+                best = run;
+        }
+        else {
+            run = 0;
+        }
+    }
+    return best;
+}
+/**
+ * Count genuine direction reversals: sign flips of the angular step where
+ * both steps exceed 30% of the median step magnitude, so noise around
+ * zero-crossing samples never inflates the count.
+ */
+function directionChangeCount(dAngle) {
+    const n = dAngle.length;
+    if (n < 2)
+        return 0;
+    const sorted = dAngle.map(Math.abs).sort((a, b) => a - b);
+    const med = sorted[Math.floor(n / 2)];
+    if (med <= 0)
+        return 0;
+    let count = 0;
+    for (let i = 1; i < n; i++) {
+        const prev = dAngle[i - 1];
+        const cur = dAngle[i];
+        if (prev * cur < 0) {
+            if (Math.abs(prev) > 0.3 * med && Math.abs(cur) > 0.3 * med) {
+                count++;
+            }
+        }
+    }
+    return count;
+}
+/**
+ * Systematic speed variation across angular position: the largest
+ * best-fit sinusoid amplitude at 1-3 cycles across the sweep, measured
+ * over a 12-sector speed profile, divided by the overall mean speed.
+ *
+ * Human drawing speed varies with hand posture around the circle
+ * (typical amplitudes 0.15..0.5). The narrow-band projection is what
+ * makes this noise-robust: white positional noise inflates the raw
+ * spread of sector means but contributes almost nothing to any single
+ * low harmonic, so injected noise cannot fake systematic modulation.
+ *
+ * Returns 0 for short series, constant speed, or degenerate angles.
+ */
+function speedModulation(angle, speed) {
+    const n = angle.length;
+    if (n < 12 || speed.length !== n)
+        return 0;
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const a of angle) {
+        if (a < lo)
+            lo = a;
+        if (a > hi)
+            hi = a;
+    }
+    const span = hi - lo;
+    if (!(span > 0))
+        return 0;
+    let overall = 0;
+    for (const v of speed)
+        overall += v;
+    overall /= n;
+    if (!(overall > 0))
+        return 0;
+    const sectors = 12;
+    const sums = new Array(sectors).fill(0);
+    const counts = new Array(sectors).fill(0);
+    for (let i = 0; i < n; i++) {
+        const a = angle[i];
+        const v = speed[i];
+        const idx = Math.min(sectors - 1, Math.floor(((a - lo) / span) * sectors));
+        sums[idx] = sums[idx] + v;
+        counts[idx] = counts[idx] + 1;
+    }
+    const ss = [];
+    const ys = [];
+    for (let j = 0; j < sectors; j++) {
+        const c = counts[j];
+        if (c > 0) {
+            ss.push((j + 0.5) / sectors);
+            ys.push(sums[j] / c - overall);
+        }
+    }
+    if (ys.length < 6)
+        return 0;
+    const amp = (cycles) => {
+        let cosSum = 0;
+        let sinSum = 0;
+        for (let i = 0; i < ys.length; i++) {
+            const s = ss[i];
+            const y = ys[i];
+            cosSum += y * Math.cos(2 * Math.PI * cycles * s);
+            sinSum += y * Math.sin(2 * Math.PI * cycles * s);
+        }
+        return (2 * Math.hypot(cosSum, sinSum)) / ys.length;
+    };
+    return Math.max(amp(1), amp(2), amp(3)) / overall;
+}
+
+// ---- dist/esm/engine/stats.js -----------------------------------------
+/**
+ * Small numeric utilities shared by the analysis engine.
+ * Pure functions, no state, no environment access.
+ */
+/** Arithmetic mean. Returns 0 for an empty series. */
+function mean(values) {
+    if (values.length === 0)
+        return 0;
+    let sum = 0;
+    for (const v of values)
+        sum += v;
+    return sum / values.length;
+}
+/** Sample standard deviation (n-1 denominator). Returns 0 for < 2 values. */
+function std(values) {
+    const n = values.length;
+    if (n < 2)
+        return 0;
+    const m = mean(values);
+    let acc = 0;
+    for (const v of values) {
+        const d = v - m;
+        acc += d * d;
+    }
+    return Math.sqrt(acc / (n - 1));
+}
+/**
+ * Coefficient of variation (std / |mean|).
+ * Returns 0 when the mean is 0 or the series is too short, so a constant
+ * series scores 0 variation and never divides by zero.
+ */
+function cv(values) {
+    const m = mean(values);
+    if (m === 0)
+        return 0;
+    return std(values) / Math.abs(m);
+}
+/** Median. Returns 0 for an empty series. */
+function median(values) {
+    const n = values.length;
+    if (n === 0)
+        return 0;
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(n / 2);
+    if (n % 2 === 1) {
+        return sorted[mid];
+    }
+    return (sorted[mid - 1] + sorted[mid]) / 2;
+}
+/** Clamp x into [lo, hi]. */
+function clamp(x, lo, hi) {
+    return Math.min(hi, Math.max(lo, x));
+}
+/**
+ * Linear ramp: returns 0 at or below `lo`, 1 at or above `hi`,
+ * linear in between. `hi <= lo` is rejected by callers' contract.
+ */
+function ramp(x, lo, hi) {
+    if (hi <= lo)
+        return x >= hi ? 1 : 0;
+    if (x <= lo)
+        return 0;
+    if (x >= hi)
+        return 1;
+    return (x - lo) / (hi - lo);
+}
+/**
+ * Piecewise-linear curve through (x, value) anchor points, clamped to the
+ * first/last value outside the anchor range. Anchor x values must be
+ * strictly ascending.
+ *
+ * All behavioral normalization ("how human-like is this value?") is
+ * expressed through these curves so every threshold is inspectable and
+ * testable in one place.
+ */
+function curve(x, anchors) {
+    if (anchors.length === 0)
+        return 0;
+    const first = anchors[0];
+    if (x <= first[0])
+        return first[1];
+    const last = anchors[anchors.length - 1];
+    if (x >= last[0])
+        return last[1];
+    for (let i = 1; i < anchors.length; i++) {
+        const a = anchors[i];
+        const prev = anchors[i - 1];
+        if (x <= a[0]) {
+            const t = (x - prev[0]) / (a[0] - prev[0]);
+            return prev[1] + t * (a[1] - prev[1]);
+        }
+    }
+    return last[1];
+}
+/**
+ * Lag-1 autocorrelation of a series. Measures whether consecutive
+ * deviations from the mean tend to agree (values near 1) or are
+ * independent (values near 0). Returns 0 for short or constant series.
+ */
+function lag1Autocorr(values) {
+    const n = values.length;
+    if (n < 4)
+        return 0;
+    const m = mean(values);
+    let num = 0;
+    let den = 0;
+    for (let i = 0; i < n; i++) {
+        const d = values[i] - m;
+        den += d * d;
+        if (i > 0)
+            num += d * (values[i - 1] - m);
+    }
+    if (den <= 0)
+        return 0;
+    return num / den;
+}
+/**
+ * Count distinct values in a series, treating values as equal when they
+ * differ by at most `absTol` or `relTol * |value|`.
+ */
+function countUnique(values, relTol, absTol) {
+    if (values.length === 0)
+        return 0;
+    const sorted = [...values].sort((a, b) => a - b);
+    let unique = 1;
+    for (let i = 1; i < sorted.length; i++) {
+        const prev = sorted[i - 1];
+        const cur = sorted[i];
+        const tol = Math.max(absTol, relTol * Math.abs(prev));
+        if (Math.abs(cur - prev) > tol)
+            unique++;
+    }
+    return unique;
+}
+
+// ---- dist/esm/engine/metrics.js -----------------------------------------
+/**
+ * Behavioral metric computation and normalization.
+ *
+ * Two layers live here:
+ *
+ * 1. `computeBehavioralMetrics` derives the raw metric table from samples,
+ *    a fitted circle, and step kinematics. Every metric is
+ *    scale/position-invariant (ratios and coefficients of variation), so
+ *    the same thresholds apply to a 40px phone circle and a 400px desktop
+ *    circle.
+ *
+ * 2. The `hl*` (human-likeness) functions normalize one raw metric into
+ *    [0, 1] where 1 is human-consistent and 0 is machine-consistent.
+ *    Each is a piecewise-linear curve with explicit anchors, so every
+ *    threshold is inspectable, documented, and unit-testable.
+ *
+ * Deliberate design rule: no single metric is trusted. Noise can fake
+ * amplitude, so amplitude-based metrics (tremor, velocity variation) are
+ * paired with correlation-based ones (lag-1 autocorrelation) that
+ * distinguish temporally structured human jitter from injected white
+ * noise, and machine signatures carry separate penalty weight.
+ */
+
+
+/** Human-readable labels for the scored metrics. */
+const METRIC_LABELS = {
+    angularVelocityVariation: "Angular velocity variation",
+    speedModulation: "Speed modulation over the sweep",
+    radialWobble: "Low-frequency radius wobble",
+    radialTremor: "High-frequency radial jitter",
+    residualAutocorrelation: "Temporal correlation of jitter",
+    startEndDynamics: "Start/end speed ramps",
+    timestampIrregularity: "Timestamp irregularity",
+    collinearFreedom: "Absence of collinear interpolation",
+    directionStability: "Direction stability",
+    accelerationVariation: "Acceleration variation",
+    pauseNaturalness: "Pause naturalness",
+    pressureVariation: "Pressure variation",
+};
+// ---------------------------------------------------------------------------
+// Normalization curves.
+// Anchors are (value, human-likeness) pairs, piecewise-linear in between.
+// Rationale for each anchor set is documented in docs/DETECTION.md.
+// ---------------------------------------------------------------------------
+/**
+ * Angular velocity variation. Humans modulate angular speed smoothly
+ * (CV ~0.08..0.6). Perfect parametric machines sit near 0; extreme
+ * jitter scores below 1 but never 0 (jitter is not machine evidence).
+ */
+function hlAngularVelocityVariation(omegaCv, omegaAutocorr) {
+    const cvPart = curve(omegaCv, [
+        [0.02, 0],
+        [0.08, 1],
+        [0.6, 1],
+        [1.5, 0.45],
+    ]);
+    // Structured (smooth) variation is positively autocorrelated; white
+    // noise injected onto a constant-speed generator is not. Autocorr 0
+    // (constant or independent noise) scores 0.
+    const corrPart = curve(omegaAutocorr, [
+        [0.02, 0],
+        [0.25, 1],
+        [1.5, 1],
+    ]);
+    return 0.5 * cvPart + 0.5 * corrPart;
+}
+/** Systematic speed variation across the sweep; machines stay near 0. */
+function hlSpeedModulation(m) {
+    return curve(m, [
+        [0.02, 0],
+        [0.1, 1],
+        [3, 1],
+    ]);
+}
+/** Low-frequency radius modulation; exact parametric circles have none. */
+function hlRadialWobble(w) {
+    return curve(w, [
+        [0.002, 0],
+        [0.012, 1],
+        [0.2, 1],
+        [0.5, 0.45],
+    ]);
+}
+/**
+ * High-frequency radial jitter amplitude (tremor / tracking noise),
+ * blended with its temporal structure. Amplitude alone can be faked by
+ * injecting noise; temporally structured jitter cannot, so amplitude
+ * without autocorrelation only reaches 0.6.
+ */
+function hlRadialTremor(residual, residualAutocorr) {
+    const ampPart = curve(residual, [
+        [0.0004, 0],
+        [0.003, 1],
+        [2, 1],
+    ]);
+    const corrPart = curve(residualAutocorr, [
+        [0.02, 0],
+        [0.25, 1],
+        [1.5, 1],
+    ]);
+    return 0.6 * ampPart + 0.4 * corrPart;
+}
+/**
+ * Temporal structure of the radial residual. Human jitter and smooth
+ * path error are positively autocorrelated; Gaussian noise added by a
+ * generator is not. This is the primary noise-vs-tremor discriminator.
+ */
+function hlResidualAutocorr(a) {
+    return curve(a, [
+        [0.02, 0],
+        [0.25, 1],
+        [1.5, 1],
+    ]);
+}
+/**
+ * Start/end speed behavior. Humans ramp into and out of a stroke;
+ * constant-speed generators start and end at full speed (ratio ~1).
+ */
+function hlStartEndDynamics(startRatio, endRatio) {
+    const start = curve(startRatio, [
+        [0.75, 1],
+        [0.93, 0.9],
+        [0.99, 0.1],
+    ]);
+    const end = curve(endRatio, [
+        [0.75, 1],
+        [0.93, 0.85],
+        [0.99, 0.15],
+    ]);
+    return 0.6 * start + 0.4 * end;
+}
+/**
+ * Inter-sample interval irregularity. Real input pipelines deliver
+ * events with OS-level jitter; scripted loops emit near-uniform dt.
+ * Deliberately low weight: capture loops (requestAnimationFrame,
+ * coalesced events) can also produce fairly regular timestamps, and a
+ * generator can trivially add jitter, so this is corroborating evidence
+ * only.
+ */
+function hlTimestampIrregularity(dtCv) {
+    return curve(dtCv, [
+        [0.004, 0],
+        [0.04, 1],
+        [3, 1],
+    ]);
+}
+/** Absence of exactly-collinear equal-step runs (waypoint interpolation). */
+function hlCollinearFreedom(maxRun) {
+    return curve(maxRun, [
+        [0, 1],
+        [2, 0.6],
+        [4, 0],
+        [99, 0],
+    ]);
+}
+/**
+ * Direction stability. Humans draw circles without genuine reversals;
+ * a value below 1 is unusual but weakly informative, so weight is low.
+ */
+function hlDirectionStability(changeRatio) {
+    return curve(changeRatio, [
+        [0, 1],
+        [0.02, 0.8],
+        [0.08, 0.25],
+        [0.3, 0],
+    ]);
+}
+/**
+ * Tangential acceleration variation, blended with its temporal
+ * structure. Constant-speed machines sit near 0; white noise produces
+ * variation without correlation and stops at 0.5; smooth human
+ * acceleration profiles vary and are autocorrelated.
+ */
+function hlAccelerationVariation(accelCv, accelAutocorr) {
+    const cvPart = curve(accelCv, [
+        [0.02, 0],
+        [0.12, 1],
+        [4, 1],
+    ]);
+    const corrPart = curve(accelAutocorr, [
+        [0.02, 0],
+        [0.25, 1],
+        [1.5, 1],
+    ]);
+    return 0.5 * cvPart + 0.5 * corrPart;
+}
+/**
+ * Pause naturalness. Mid-stroke pauses are unusual for machines AND
+ * common for some humans (deliberate, careful, or assistive input), so
+ * the floor stays high and the penalty is symbolic.
+ */
+function hlPauseNaturalness(pauseCount) {
+    return curve(pauseCount, [
+        [0, 1],
+        [1, 0.75],
+        [4, 0.5],
+        [12, 0.3],
+    ]);
+}
+/**
+ * Pressure variation, only scored for touch/pen with real pressure.
+ * Constant pressure across a long stroke is mildly machine-like, but
+ * some hardware reports constant pressure — low weight, anomaly only.
+ */
+function hlPressureVariation(pressureCv) {
+    return curve(pressureCv, [
+        [0.002, 0],
+        [0.02, 1],
+        [2, 1],
+    ]);
+}
+/**
+ * Compute the full behavioral metric table. Never throws; degenerate
+ * inputs yield zeroed metrics (the orchestrator reports them through
+ * data quality instead).
+ */
+function computeBehavioralMetrics(input) {
+    const { samples, points, times, strokeIndices, fit, kin, pauseMs } = input;
+    const n = samples.length;
+    // Reference center: fitted circle center when the fit is usable,
+    // otherwise the centroid (so downstream math never sees NaN).
+    let cx = 0;
+    let cy = 0;
+    if (fit.ok) {
+        cx = fit.cx;
+        cy = fit.cy;
+    }
+    else {
+        for (const p of points) {
+            cx += p.x;
+            cy += p.y;
+        }
+        if (n > 0) {
+            cx /= n;
+            cy /= n;
+        }
+    }
+    // --- Geometry ---
+    const radii = [];
+    for (const p of points) {
+        radii.push(Math.hypot(p.x - cx, p.y - cy));
+    }
+    const refRadius = fit.ok ? fit.r : mean(radii);
+    const safeRadius = refRadius > 0 ? refRadius : 1;
+    const smoothed = smoothSeries(radii, Math.max(5, Math.round(0.12 * n)));
+    const residual = [];
+    for (let i = 0; i < n; i++) {
+        residual.push(radii[i] - smoothed[i]);
+    }
+    // Low-frequency wobble: amplitude of the best-fit sinusoid at 1-2
+    // cycles across the sweep, measured over sector-averaged radius.
+    // Sector averaging plus a narrow-band projection makes white noise
+    // contribute ~nothing (noise spreads across all frequencies), while
+    // human arm wobble concentrates at 1-2 cycles per revolution.
+    const unwrapped = unwrapAngles(kin.angle);
+    const radialWobble = radialWobbleAmplitude(radii, unwrapped, safeRadius);
+    const radialResidual = std(residual) / safeRadius;
+    const radialResidualAutocorr = lag1Autocorr(residual);
+    const radiusCv = cv(radii);
+    // Coverage: swept angle per stroke, summed (multi-stroke circles add up).
+    // Step i connects samples i and i+1, so stroke membership compares
+    // strokeIndices[i] with strokeIndices[i+1].
+    const steps = kin.dAngle.length;
+    let coverageTurns = 0;
+    for (let i = 0; i < steps; i++) {
+        const sameStroke = strokeIndices[i + 1] === strokeIndices[i];
+        if (sameStroke) {
+            coverageTurns += kin.dAngle[i];
+        }
+        // Cross-stroke steps do not accumulate sweep.
+    }
+    const coverageTurnsAbs = Math.abs(coverageTurns) / (2 * Math.PI);
+    const first = points[0];
+    const last = points.length > 0 ? points[points.length - 1] : undefined;
+    const closureGapRatio = first !== undefined && last !== undefined
+        ? Math.hypot(last.x - first.x, last.y - first.y) / safeRadius
+        : 0;
+    const geometry = {
+        centerX: fit.ok ? fit.cx : 0,
+        centerY: fit.ok ? fit.cy : 0,
+        radius: fit.ok ? fit.r : 0,
+        fitRmsError: fit.ok ? fit.rmsError : 0,
+        radiusCv,
+        coverageTurns: coverageTurnsAbs,
+        closureGapRatio,
+        radialWobble,
+        radialResidual,
+        radialResidualAutocorr,
+    };
+    // --- Kinematics ---
+    // Core region: the middle 70% of the sweep by time. Start/end ramps
+    // are shared structure — humans accelerate into a stroke and good
+    // generators copy that — so the discriminative kinematics are
+    // measured between the ramps, where human speed keeps varying with
+    // hand posture and a ramp-wrapped constant-speed generator is flat.
+    const t0 = n > 0 ? times[0] : 0;
+    const tN = n > 0 ? times[n - 1] : 0;
+    const totalT = tN - t0 > 0 ? tN - t0 : 1;
+    const coreIdx = [];
+    for (let i = 0; i < steps; i++) {
+        const sMid = (times[i] + times[i + 1]) / 2;
+        const frac = (sMid - t0) / totalT;
+        if (frac >= 0.15 && frac <= 0.85)
+            coreIdx.push(i);
+    }
+    const useCore = coreIdx.length >= 8;
+    const coreOmega = useCore
+        ? coreIdx.map((i) => kin.omega[i])
+        : kin.omega;
+    const coreAccel = useCore
+        ? coreIdx
+            .filter((i) => i < kin.accel.length)
+            .map((i) => kin.accel[i])
+        : kin.accel;
+    const speedMean = mean(kin.speed);
+    const speedStd = std(kin.speed);
+    const meanAbsAccel = mean(coreAccel.map(Math.abs));
+    const accelStd = std(coreAccel);
+    const startK = Math.max(1, Math.ceil(0.1 * steps));
+    const endK = Math.max(1, Math.ceil(0.1 * steps));
+    const startSpeedRatio = steps > 0 && speedMean > 0
+        ? mean(kin.speed.slice(0, startK)) / speedMean
+        : 0;
+    const endSpeedRatio = steps > 0 && speedMean > 0
+        ? mean(kin.speed.slice(steps - endK)) / speedMean
+        : 0;
+    const directionChanges = directionChangeCount(kin.dAngle);
+    const maxCollinearRun = longestCollinearRun(points);
+    const maxConstantSpeedRun = longestConstantRun(kin.speed, 1e-9);
+    // Median per-step displacement (px): a resolution probe for per-step
+    // kinematics. When a stroke is sampled so finely (high-rate device,
+    // getCoalescedEvents feeding) or drawn so slowly that the typical
+    // step is at the coordinate noise floor, per-step speed/direction
+    // measurements describe noise, not motion.
+    const stepDistances = [];
+    for (let i = 1; i < points.length; i++) {
+        const a = points[i - 1];
+        const b = points[i];
+        stepDistances.push(Math.hypot(b.x - a.x, b.y - a.y));
+    }
+    const medianStepDistance = median(stepDistances);
+    // Speed modulation is indexed by step: align angles to steps (angle at
+    // each step's midpoint) so both series have length n-1, then restrict
+    // to the core region for the same reason as the other kinematics.
+    const stepAngles = [];
+    for (let i = 0; i + 1 < unwrapped.length; i++) {
+        stepAngles.push((unwrapped[i] + unwrapped[i + 1]) / 2);
+    }
+    const modulation = speedModulation(useCore ? coreIdx.map((i) => stepAngles[i]) : stepAngles, useCore ? coreIdx.map((i) => kin.speed[i]) : kin.speed);
+    const kinematics = {
+        meanSpeed: speedMean,
+        speedCv: speedMean > 0 ? speedStd / speedMean : 0,
+        speedModulation: modulation,
+        angularVelocityCv: cv(coreOmega),
+        angularVelocityAutocorr: lag1Autocorr(coreOmega),
+        accelerationCv: meanAbsAccel > 0 ? accelStd / meanAbsAccel : 0,
+        accelerationAutocorr: lag1Autocorr(coreAccel),
+        startSpeedRatio,
+        endSpeedRatio,
+        directionChanges,
+        medianStepDistance,
+        maxCollinearRun,
+        maxConstantSpeedRun,
+    };
+    // --- Timing ---
+    const pauseFlags = findPauses(kin.dt, pauseMs);
+    let pauses = 0;
+    let pauseTotalMs = 0;
+    for (let i = 0; i < pauseFlags.length; i++) {
+        // Step i connects samples i and i+1; only within-stroke gaps count
+        // as pauses (between strokes is already covered by MULTIPLE_STROKES).
+        const sameStroke = strokeIndices[i + 1] === strokeIndices[i];
+        if (pauseFlags[i] && sameStroke) {
+            pauses++;
+            pauseTotalMs += kin.dt[i];
+        }
+    }
+    const timing = {
+        dtCv: cv(kin.dt),
+        pauses,
+        pauseMs: pauseTotalMs,
+    };
+    // --- Pressure ---
+    const pressureValues = [];
+    const pointerTypes = new Set();
+    for (const s of samples) {
+        if (typeof s.pointerType === "string")
+            pointerTypes.add(s.pointerType);
+        if (typeof s.pressure === "number" && Number.isFinite(s.pressure)) {
+            pressureValues.push(s.pressure);
+        }
+    }
+    const types = [...pointerTypes];
+    const touchLike = types.length > 0 && types.every((t) => t === "touch" || t === "pen");
+    const positivePressure = pressureValues.filter((p) => p > 0).length;
+    const pressureAvailable = touchLike &&
+        pressureValues.length === n &&
+        n > 0 &&
+        positivePressure >= 0.8 * n;
+    const pressure = {
+        available: pressureAvailable,
+        cv: pressureAvailable ? cv(pressureValues) : 0,
+        uniqueValues: pressureAvailable
+            ? countUnique(pressureValues, 1e-3, 1e-4)
+            : 0,
+    };
+    // --- Strokes ---
+    const strokeSet = new Set();
+    for (const s of strokeIndices)
+        strokeSet.add(s);
+    const durationMs = n >= 2 ? times[n - 1] - times[0] : 0;
+    return {
+        sampleCount: n,
+        strokeCount: strokeSet.size > 0 ? strokeSet.size : n > 0 ? 1 : 0,
+        durationMs,
+        droppedSamples: 0, // filled in by the orchestrator
+        geometry,
+        kinematics,
+        timing,
+        pressure,
+        pointerTypes: types,
+    };
+}
+/**
+ * Low-frequency radius-wobble amplitude: the larger of the best-fit
+ * sinusoid amplitudes at 1 and 2 cycles across the sweep, measured over
+ * sector-averaged radius, divided by the reference radius.
+ *
+ * Narrow-band by construction: white noise injected into a generated
+ * circle spreads its energy across all frequencies and averages out of
+ * the sector means, contributing negligible amplitude, while natural
+ * arm wobble concentrates at 1-2 cycles per revolution.
+ *
+ * Returns 0 when there are too few samples or sectors to project
+ * meaningfully.
+ */
+function radialWobbleAmplitude(radii, unwrappedAngles, radius) {
+    const n = radii.length;
+    if (n < 12)
+        return 0;
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const a of unwrappedAngles) {
+        if (a < lo)
+            lo = a;
+        if (a > hi)
+            hi = a;
+    }
+    const span = hi - lo;
+    if (!(span > 0))
+        return 0;
+    const sectors = 12;
+    const sums = new Array(sectors).fill(0);
+    const counts = new Array(sectors).fill(0);
+    const overallMean = mean(radii);
+    for (let i = 0; i < n; i++) {
+        const a = unwrappedAngles[i];
+        const r = radii[i];
+        const idx = Math.min(sectors - 1, Math.floor(((a - lo) / span) * sectors));
+        sums[idx] = sums[idx] + (r - overallMean);
+        counts[idx] = counts[idx] + 1;
+    }
+    // Collect populated sector profiles: s in [0, 1] across the sweep,
+    // y = sector mean deviation.
+    const ss = [];
+    const ys = [];
+    for (let j = 0; j < sectors; j++) {
+        const c = counts[j];
+        if (c > 0) {
+            ss.push((j + 0.5) / sectors);
+            ys.push(sums[j] / c);
+        }
+    }
+    if (ys.length < 6)
+        return 0;
+    const amp = (cycles) => {
+        let cosSum = 0;
+        let sinSum = 0;
+        for (let i = 0; i < ys.length; i++) {
+            const s = ss[i];
+            const y = ys[i];
+            cosSum += y * Math.cos(2 * Math.PI * cycles * s);
+            sinSum += y * Math.sin(2 * Math.PI * cycles * s);
+        }
+        return (2 * Math.hypot(cosSum, sinSum)) / ys.length;
+    };
+    return Math.max(amp(1), amp(2)) / radius;
+}
+
+// ---- dist/esm/engine/scoring.js -----------------------------------------
+/**
+ * Scoring, thresholds, and classification.
+ *
+ * The final score has two additive parts:
+ *
+ *   score = weighted_mean(per-metric human-likeness) - machine_penalties
+ *
+ * The weighted mean rewards natural variation that a generator would have
+ * to deliberately fake; the penalties punish machine signatures that no
+ * natural hand produces (exactly constant angular velocity, collinear
+ * interpolation runs, uniform timestamps, ...). Both parts are visible in
+ * the result (`contributions` and `anomalies`), so every verdict can be
+ * explained after the fact.
+ *
+ * Confidence is deliberately conservative: it combines data sufficiency
+ * with cross-metric agreement, and a low confidence forces INCONCLUSIVE
+ * no matter how confident the score looks.
+ */
+
+
+
+/**
+ * Classification thresholds per sensitivity preset.
+ *
+ * The band between `suspiciousThreshold` and `humanThreshold` is the
+ * gray zone: it classifies INCONCLUSIVE rather than guessing.
+ */
+const SENSITIVITY_PRESETS = {
+    relaxed: {
+        humanThreshold: 0.48,
+        suspiciousThreshold: 0.26,
+        minConfidence: 0.3,
+    },
+    balanced: {
+        humanThreshold: 0.58,
+        suspiciousThreshold: 0.33,
+        minConfidence: 0.4,
+    },
+    strict: {
+        humanThreshold: 0.66,
+        suspiciousThreshold: 0.4,
+        minConfidence: 0.5,
+    },
+};
+/**
+ * Weights of the behavioral metrics. They sum to 1 without pressure;
+ * when usable pressure data exists, pressureVariation joins and the
+ * aggregate renormalizes.
+ *
+ * Rationale, roughly: movement dynamics (velocity/acceleration
+ * structure) carry the signal; geometry noise carries the least;
+ * timestamp regularity and direction stability are corroborating only,
+ * because both are environment-sensitive and trivially fakeable.
+ */
+const METRIC_WEIGHTS = {
+    angularVelocityVariation: 0.16,
+    speedModulation: 0.16,
+    radialWobble: 0.12,
+    radialTremor: 0.1,
+    residualAutocorrelation: 0.1,
+    startEndDynamics: 0.12,
+    timestampIrregularity: 0.06,
+    collinearFreedom: 0.06,
+    directionStability: 0.04,
+    accelerationVariation: 0.04,
+    pauseNaturalness: 0.04,
+    pressureVariation: 0.05,
+};
+/**
+ * Score penalties applied when a machine-signature anomaly is present.
+ * Applied after the weighted mean, so a single hard signature can pull
+ * a noisy-but-otherwise-human-looking interaction below the suspicious
+ * threshold.
+ */
+const ANOMALY_PENALTIES = {
+    CONSTANT_ANGULAR_VELOCITY: 0.35,
+    COLLINEAR_INTERPOLATION: 0.3,
+    PIECEWISE_CONSTANT_SPEED: 0.25,
+    NOISE_WITHOUT_STRUCTURE: 0.2,
+    ZERO_RADIAL_RESIDUAL: 0.15,
+    UNIFORM_TIMESTAMPS: 0.12,
+    NO_SPEED_MODULATION: 0.1,
+    INSTANT_START_VELOCITY: 0.1,
+    PRESSURE_INVARIANT: 0.05,
+    EXCESSIVE_DIRECTION_CHANGES: 0.05,
+    MULTIPLE_STROKES: 0.05,
+    MID_STROKE_PAUSES: 0.02,
+};
+/** Severity labels reported alongside anomalies. */
+const ANOMALY_SEVERITY = {
+    INSUFFICIENT_SAMPLES: "high",
+    INSUFFICIENT_DURATION: "high",
+    INCOMPLETE_CIRCLE: "high",
+    NOT_CIRCLE_LIKE: "high",
+    MULTIPLE_STROKES: "low",
+    CONSTANT_ANGULAR_VELOCITY: "high",
+    UNIFORM_TIMESTAMPS: "medium",
+    COLLINEAR_INTERPOLATION: "high",
+    PIECEWISE_CONSTANT_SPEED: "high",
+    ZERO_RADIAL_RESIDUAL: "high",
+    INSTANT_START_VELOCITY: "medium",
+    NO_SPEED_MODULATION: "medium",
+    EXCESSIVE_DIRECTION_CHANGES: "low",
+    MID_STROKE_PAUSES: "low",
+    PRESSURE_INVARIANT: "low",
+    NOISE_WITHOUT_STRUCTURE: "high",
+    MOTION_BELOW_NOISE_FLOOR: "medium",
+};
+/**
+ * Validate options and apply defaults. Throws `CircleDetectorError` with
+ * code `INVALID_OPTIONS` on malformed input so misconfiguration fails
+ * loudly at the boundary instead of silently changing behavior.
+ */
+function resolveOptions(options) {
+    const o = options ?? {};
+    if (typeof o !== "object" || o === null) {
+        throw new CircleDetectorError("INVALID_OPTIONS", "options must be an object when provided");
+    }
+    const sensitivity = o.sensitivity ?? "balanced";
+    if (!(sensitivity in SENSITIVITY_PRESETS)) {
+        throw new CircleDetectorError("INVALID_OPTIONS", `sensitivity must be one of "relaxed", "balanced", "strict" (got ${JSON.stringify(sensitivity)})`);
+    }
+    const thresholds = { ...SENSITIVITY_PRESETS[sensitivity] };
+    if (o.thresholds !== undefined) {
+        const t = o.thresholds;
+        for (const key of ["humanThreshold", "suspiciousThreshold", "minConfidence"]) {
+            const v = t[key];
+            if (v === undefined)
+                continue;
+            if (typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > 1) {
+                throw new CircleDetectorError("INVALID_OPTIONS", `thresholds.${key} must be a finite number in [0, 1]`);
+            }
+            thresholds[key] = v;
+        }
+        if (thresholds.suspiciousThreshold >= thresholds.humanThreshold) {
+            throw new CircleDetectorError("INVALID_OPTIONS", "thresholds.suspiciousThreshold must be strictly below thresholds.humanThreshold");
+        }
+    }
+    const minSamples = o.minSamples ?? 24;
+    if (typeof minSamples !== "number" ||
+        !Number.isInteger(minSamples) ||
+        minSamples < 5) {
+        throw new CircleDetectorError("INVALID_OPTIONS", "minSamples must be an integer >= 5");
+    }
+    const minDurationMs = o.minDurationMs ?? 300;
+    if (typeof minDurationMs !== "number" || !Number.isFinite(minDurationMs) || minDurationMs <= 0) {
+        throw new CircleDetectorError("INVALID_OPTIONS", "minDurationMs must be a finite number > 0");
+    }
+    const minCoverageTurns = o.minCoverageTurns ?? 0.85;
+    if (typeof minCoverageTurns !== "number" ||
+        !Number.isFinite(minCoverageTurns) ||
+        minCoverageTurns <= 0 ||
+        minCoverageTurns > 3) {
+        throw new CircleDetectorError("INVALID_OPTIONS", "minCoverageTurns must be a finite number in (0, 3]");
+    }
+    const pauseMs = o.pauseMs ?? 120;
+    if (typeof pauseMs !== "number" || !Number.isFinite(pauseMs) || pauseMs <= 0) {
+        throw new CircleDetectorError("INVALID_OPTIONS", "pauseMs must be a finite number > 0");
+    }
+    return { sensitivity, thresholds, minSamples, minDurationMs, minCoverageTurns, pauseMs };
+}
+/**
+ * Aggregate per-metric human-likeness into the final score and the
+ * per-metric contribution table.
+ *
+ * Metrics that cannot be computed from the provided data (fewer than
+ * two samples) are excluded from the weighted mean with an explanatory
+ * note, never defaulted — an empty interaction must not inherit the
+ * "absence of pathology" score of metrics like pause naturalness.
+ */
+function scoreBehavior(metrics, anomalies) {
+    const k = metrics.kinematics;
+    const steps = Math.max(0, metrics.sampleCount - 1);
+    const scorable = metrics.sampleCount >= 2 && steps > 0;
+    const values = [
+        {
+            key: "angularVelocityVariation",
+            value: hlAngularVelocityVariation(k.angularVelocityCv, k.angularVelocityAutocorr),
+        },
+        { key: "speedModulation", value: hlSpeedModulation(k.speedModulation) },
+        { key: "radialWobble", value: hlRadialWobble(metrics.geometry.radialWobble) },
+        { key: "radialTremor", value: hlRadialTremor(metrics.geometry.radialResidual, metrics.geometry.radialResidualAutocorr) },
+        {
+            key: "residualAutocorrelation",
+            value: hlResidualAutocorr(metrics.geometry.radialResidualAutocorr),
+        },
+        {
+            key: "startEndDynamics",
+            value: hlStartEndDynamics(k.startSpeedRatio, k.endSpeedRatio),
+        },
+        { key: "timestampIrregularity", value: hlTimestampIrregularity(metrics.timing.dtCv) },
+        { key: "collinearFreedom", value: hlCollinearFreedom(k.maxCollinearRun) },
+        {
+            key: "directionStability",
+            value: hlDirectionStability(steps > 0 ? k.directionChanges / steps : 1),
+        },
+        { key: "accelerationVariation", value: hlAccelerationVariation(k.accelerationCv, k.accelerationAutocorr) },
+        { key: "pauseNaturalness", value: hlPauseNaturalness(metrics.timing.pauses) },
+    ];
+    const pressureAvailable = metrics.pressure.available;
+    values.push({
+        key: "pressureVariation",
+        value: pressureAvailable ? hlPressureVariation(metrics.pressure.cv) : 0,
+        note: pressureAvailable
+            ? undefined
+            : "no usable pressure data (mouse or absent); metric excluded from scoring",
+    });
+    let weightSum = 0;
+    let weighted = 0;
+    const contributions = [];
+    for (const entry of values) {
+        const excluded = !scorable;
+        const isPressure = entry.key === "pressureVariation";
+        const weight = excluded || (isPressure && !pressureAvailable) ? 0 : METRIC_WEIGHTS[entry.key];
+        weightSum += weight;
+        weighted += weight * entry.value;
+        const note = excluded
+            ? "not computable from the provided data; metric excluded from scoring"
+            : entry.note;
+        contributions.push({
+            key: entry.key,
+            label: METRIC_LABELS[entry.key],
+            value: round4(entry.value),
+            weight: round4(weight),
+            ...(note !== undefined ? { note } : {}),
+        });
+    }
+    let score = weightSum > 0 ? weighted / weightSum : 0;
+    for (const a of anomalies) {
+        const penalty = ANOMALY_PENALTIES[a.code];
+        if (penalty !== undefined) {
+            score -= penalty;
+        }
+    }
+    score = clamp(score, 0, 1);
+    return { score: round4(score), contributions };
+}
+/**
+ * Metrics that actually separate human from machine behavior.
+ *
+ * `collinearFreedom`, `directionStability`, and `pauseNaturalness` are
+ * deliberately excluded from the cross-metric agreement term: they are
+ * "absence of pathology" checks that any well-formed input (human or
+ * bot) satisfies, so including them would depress the confidence of
+ * cleanly machine-like data and make obvious bots classify
+ * INCONCLUSIVE.
+ */
+const DISCRIMINATIVE_METRICS = new Set([
+    "angularVelocityVariation",
+    "speedModulation",
+    "radialWobble",
+    "radialTremor",
+    "residualAutocorrelation",
+    "startEndDynamics",
+    "timestampIrregularity",
+    "accelerationVariation",
+    "pressureVariation",
+]);
+/**
+ * Machine signatures that real input pipelines cannot produce. When at
+ * least one is present, the evidence for machine generation is
+ * unambiguous in that direction, so the cross-metric agreement term is
+ * floored — hard signatures are consensus for SUSPICIOUS, not
+ * disagreement against it.
+ */
+const HARD_MACHINE_SIGNATURES = new Set([
+    "CONSTANT_ANGULAR_VELOCITY",
+    "COLLINEAR_INTERPOLATION",
+    "PIECEWISE_CONSTANT_SPEED",
+    "ZERO_RADIAL_RESIDUAL",
+]);
+/**
+ * Confidence in [0, 1]: data sufficiency crossed with cross-metric
+ * agreement. Zero when the interaction is not analyzable.
+ *
+ * Agreement is floored at 0.75 when a hard machine signature is
+ * present: geometric byproducts of a generator (for example the chord
+ * sagitta of waypoint interpolation) can mimic tremor on one metric,
+ * and that single outlier must not demote an otherwise unambiguous
+ * machine verdict to INCONCLUSIVE.
+ */
+function computeConfidence(metrics, contributions, quality, resolved, anomalies) {
+    if (!quality.analyzable)
+        return 0;
+    const sufficiency = 0.45 * ramp((metrics.sampleCount - resolved.minSamples) / (3 * resolved.minSamples), 0, 1) +
+        0.3 * ramp((metrics.durationMs - resolved.minDurationMs) / (3 * resolved.minDurationMs), 0, 1) +
+        0.25 * ramp((metrics.geometry.coverageTurns - resolved.minCoverageTurns) / 0.45, 0, 1);
+    const scored = contributions
+        .filter((c) => c.weight > 0 && DISCRIMINATIVE_METRICS.has(c.key))
+        .map((c) => c.value);
+    let agreement = clamp(1 - std(scored) / 0.4, 0, 1);
+    const hasHardSignature = anomalies.some((a) => HARD_MACHINE_SIGNATURES.has(a.code));
+    if (hasHardSignature) {
+        agreement = Math.max(agreement, 0.75);
+    }
+    return round4(clamp(0.45 * sufficiency + 0.55 * agreement, 0, 1));
+}
+/**
+ * Final classification from score, confidence, and thresholds.
+ * Everything unanalyzable or low-confidence is INCONCLUSIVE; the band
+ * between thresholds is INCONCLUSIVE too — the detector never guesses.
+ */
+function classify(score, confidence, thresholds, analyzable) {
+    if (!analyzable)
+        return "INCONCLUSIVE";
+    if (confidence < thresholds.minConfidence)
+        return "INCONCLUSIVE";
+    if (score >= thresholds.humanThreshold)
+        return "HUMAN_LIKE";
+    if (score <= thresholds.suspiciousThreshold)
+        return "SUSPICIOUS";
+    return "INCONCLUSIVE";
+}
+/** Round to 4 decimals for stable, deterministic JSON output. */
+function round4(x) {
+    return Math.round(x * 10000) / 10000;
+}
+
+// ---- dist/esm/engine/analyze.js -----------------------------------------
+/**
+ * Analysis orchestration: one pure pass from samples to a verdict.
+ *
+ * Contract:
+ * - Structurally invalid input (non-array, non-finite x/y/t) throws
+ *   `CircleDetectorError` with code INVALID_SAMPLES: that is a caller
+ *   bug and must fail loudly.
+ * - Data-quality problems (too few samples, too short, not circle-like,
+ *   non-monotonic timestamps) never throw: they drop data or downgrade
+ *   the verdict to INCONCLUSIVE, with the reason in `anomalies`.
+ * - Deterministic: the same samples + options produce an identical
+ *   result, byte for byte.
+ */
+
+
+
+
+
+/** Gate for geometry sanity below which the shape is not circle-like. */
+const MAX_FIT_RMS_ERROR = 0.4;
+/** Radius CV above which the shape is not circle-like. */
+const MAX_RADIUS_CV = 0.6;
+/**
+ * A stroke whose median per-step displacement is below this multiple of
+ * the coordinate noise scale (radial residual x fitted radius) is
+ * noise-dominated: per-step speeds and directions describe the noise,
+ * not the motion. The three per-step machine signatures are measurement
+ * artifacts there, so they are not evaluated; the verdict degrades to
+ * the gray band (INCONCLUSIVE) instead of accusing on unresolvable
+ * evidence. Machine corpora run well above this ratio (measured minimum
+ * 2.78 across 200 seeds per variant), so no machine signature loses
+ * its trigger in practice.
+ */
+const MIN_STEP_NOISE_RATIO = 1.5;
+/**
+ * Analyze a captured circle-drawing interaction.
+ *
+ * @param samples Chronologically ordered pointer samples.
+ * @param options Sensitivity and threshold configuration.
+ * @throws {CircleDetectorError} code `INVALID_SAMPLES` when `samples` is
+ *   not an array or a sample has non-finite `x`, `y`, or `t`.
+ * @throws {CircleDetectorError} code `INVALID_OPTIONS` when options are
+ *   malformed.
+ */
+function analyzeSamples(samples, options) {
+    const resolved = resolveOptions(options);
+    validateSamples(samples);
+    // Drop samples with non-increasing timestamps (client clock defects,
+    // replayed events). Counted, not fatal.
+    const kept = [];
+    let dropped = 0;
+    let lastT = Number.NEGATIVE_INFINITY;
+    for (const s of samples) {
+        if (s.t > lastT) {
+            kept.push(s);
+            lastT = s.t;
+        }
+        else {
+            dropped++;
+        }
+    }
+    const points = kept.map((s) => ({ x: s.x, y: s.y }));
+    const times = kept.map((s) => s.t);
+    const strokeIndices = kept.map((s) => (typeof s.stroke === "number" && Number.isFinite(s.stroke) ? Math.max(0, Math.floor(s.stroke)) : 0));
+    const fit = fitCircle(points);
+    // Center for angular math: fitted center, or centroid when the fit
+    // degenerated (angles from the centroid are meaningless for coverage,
+    // but the math stays finite and data quality gates the verdict).
+    let cx = 0;
+    let cy = 0;
+    if (fit.ok) {
+        cx = fit.cx;
+        cy = fit.cy;
+    }
+    else if (kept.length > 0) {
+        for (const p of points) {
+            cx += p.x;
+            cy += p.y;
+        }
+        cx /= kept.length;
+        cy /= kept.length;
+    }
+    const kin = computeKinematics(points, times, cx, cy);
+    const metrics = computeBehavioralMetrics({
+        samples: kept,
+        points,
+        times,
+        strokeIndices,
+        fit,
+        kin,
+        pauseMs: resolved.pauseMs,
+    });
+    metrics.droppedSamples = dropped;
+    const steps = kept.length - 1;
+    const geometryOk = fit.ok && fit.rmsError <= MAX_FIT_RMS_ERROR && metrics.geometry.radiusCv <= MAX_RADIUS_CV;
+    const quality = {
+        sufficientSamples: kept.length >= resolved.minSamples,
+        sufficientDuration: metrics.durationMs >= resolved.minDurationMs,
+        sufficientCoverage: metrics.geometry.coverageTurns >= resolved.minCoverageTurns,
+        circleFitOk: geometryOk,
+        pressureAvailable: metrics.pressure.available,
+        analyzable: false,
+    };
+    quality.analyzable =
+        quality.sufficientSamples &&
+            quality.sufficientDuration &&
+            quality.sufficientCoverage &&
+            quality.circleFitOk;
+    const anomalies = collectAnomalies(kept.length, steps, metrics, quality, resolved);
+    const { score, contributions } = scoreBehavior(metrics, anomalies);
+    const confidence = computeConfidence(metrics, contributions, quality, resolved, anomalies);
+    const classification = classify(score, confidence, resolved.thresholds, quality.analyzable);
+    return {
+        score,
+        confidence,
+        classification,
+        anomalies,
+        metrics,
+        contributions,
+        dataQuality: quality,
+    };
+}
+/** Validate sample shape. Non-finite coordinates or timestamps throw. */
+function validateSamples(samples) {
+    if (!Array.isArray(samples)) {
+        throw new CircleDetectorError("INVALID_SAMPLES", "samples must be an array of PointerSample objects");
+    }
+    for (let i = 0; i < samples.length; i++) {
+        const s = samples[i];
+        if (typeof s !== "object" || s === null) {
+            throw new CircleDetectorError("INVALID_SAMPLES", `samples[${i}] must be an object`);
+        }
+        if (!Number.isFinite(s.x) || !Number.isFinite(s.y) || !Number.isFinite(s.t)) {
+            throw new CircleDetectorError("INVALID_SAMPLES", `samples[${i}] must have finite x, y, and t (got x=${String(s.x)}, y=${String(s.y)}, t=${String(s.t)})`);
+        }
+    }
+}
+/**
+ * Assemble the anomaly list. Data-quality anomalies always report;
+ * machine-signature checks only run with enough steps to be meaningful,
+ * and angle-dependent ones additionally require a usable circle fit.
+ */
+function collectAnomalies(sampleCount, steps, metrics, quality, resolved) {
+    const anomalies = [];
+    const add = (code, detail) => {
+        anomalies.push({ code, severity: ANOMALY_SEVERITY[code], detail });
+    };
+    const k = metrics.kinematics;
+    const g = metrics.geometry;
+    if (!quality.sufficientSamples) {
+        add("INSUFFICIENT_SAMPLES", `${sampleCount} samples captured; at least ${resolved.minSamples} required for analysis`);
+    }
+    if (!quality.sufficientDuration) {
+        add("INSUFFICIENT_DURATION", `drawing duration ${metrics.durationMs.toFixed(0)}ms is below the ${resolved.minDurationMs}ms minimum`);
+    }
+    if (!quality.sufficientCoverage) {
+        add("INCOMPLETE_CIRCLE", `swept angle ${g.coverageTurns.toFixed(2)} turns is below the ${resolved.minCoverageTurns} required to count as a circle`);
+    }
+    if (!quality.circleFitOk) {
+        const reason = !fitOk(metrics)
+            ? "circle fit failed (points are degenerate)"
+            : `shape is not circle-like (fit RMS error ${(g.fitRmsError * 100).toFixed(1)}% of radius, radius CV ${(g.radiusCv * 100).toFixed(1)}%)`;
+        add("NOT_CIRCLE_LIKE", reason);
+    }
+    if (metrics.strokeCount > 1) {
+        add("MULTIPLE_STROKES", `drawing was completed in ${metrics.strokeCount} strokes; single continuous strokes are typical`);
+    }
+    // Per-step kinematics are only meaningful when the median step
+    // displacement stands clear of the coordinate noise floor. A failed
+    // fit yields no usable noise scale, so it never suppresses anything
+    // (quality gates handle degenerate shapes separately).
+    const noiseScalePx = g.radius > 0 ? g.radialResidual * g.radius : 0;
+    const stepResolvable = k.medianStepDistance >= MIN_STEP_NOISE_RATIO * noiseScalePx;
+    if (!stepResolvable && steps >= 16) {
+        add("MOTION_BELOW_NOISE_FLOOR", `median step displacement ${k.medianStepDistance.toFixed(2)}px is below ${MIN_STEP_NOISE_RATIO}x the coordinate noise scale (${noiseScalePx.toFixed(2)}px); per-step kinematic evidence is unresolvable, so per-step machine signatures are not evaluated`);
+    }
+    // Machine signatures that do not need a usable circle fit.
+    if (steps >= 20 && metrics.timing.dtCv < 0.004) {
+        add("UNIFORM_TIMESTAMPS", `inter-sample intervals are near-uniform (CV ${(metrics.timing.dtCv * 100).toFixed(2)}%); real input pipelines show more jitter`);
+    }
+    if (k.maxCollinearRun >= 4) {
+        add("COLLINEAR_INTERPOLATION", `${k.maxCollinearRun} consecutive exactly-collinear equal-step point triples; consistent with linear interpolation between waypoints`);
+    }
+    if (steps >= 24 && k.maxConstantSpeedRun >= 10) {
+        add("PIECEWISE_CONSTANT_SPEED", `longest run of identical per-step speeds is ${k.maxConstantSpeedRun} steps; natural motion does not hold speed exactly constant`);
+    }
+    if (stepResolvable && steps >= 16 && k.startSpeedRatio > 0.98) {
+        add("INSTANT_START_VELOCITY", `first samples move at ${(k.startSpeedRatio * 100).toFixed(0)}% of mean speed; humans accelerate into a stroke`);
+    }
+    if (metrics.timing.pauses >= 1) {
+        add("MID_STROKE_PAUSES", `${metrics.timing.pauses} pause(s) within strokes (${metrics.timing.pauseMs.toFixed(0)}ms total); unusual for machines, also seen with deliberate or assistive input`);
+    }
+    if (metrics.pressure.available && metrics.pressure.uniqueValues === 1 && sampleCount >= 20) {
+        add("PRESSURE_INVARIANT", "pressure is reported but identical for every sample; real touch/pen pressure usually varies (some hardware reports constant pressure)");
+    }
+    // Signatures that depend on angular geometry.
+    if (quality.circleFitOk) {
+        if (steps >= 24 && k.angularVelocityCv < 0.012) {
+            add("CONSTANT_ANGULAR_VELOCITY", `angular velocity is near-constant (CV ${(k.angularVelocityCv * 100).toFixed(2)}%); human angular speed varies with hand posture`);
+        }
+        if (stepResolvable && steps >= 30 && k.speedModulation < 0.02) {
+            add("NO_SPEED_MODULATION", `speed does not vary with angular position (modulation ${(k.speedModulation * 100).toFixed(1)}%); human drawing speed varies around the circle`);
+        }
+        if (sampleCount >= 40 && g.radialResidual < 0.0002) {
+            add("ZERO_RADIAL_RESIDUAL", `radial jitter is ${(g.radialResidual * 100).toFixed(4)}% of radius across ${sampleCount} samples; real pointers always show sub-pixel noise`);
+        }
+        if (stepResolvable && steps >= 20 && k.directionChanges > Math.max(3, 0.06 * steps)) {
+            add("EXCESSIVE_DIRECTION_CHANGES", `${k.directionChanges} genuine direction reversals across the sweep; circling motion should be mostly monotonic in angle`);
+        }
+        // White noise on an otherwise clean path: jitter amplitude in the
+        // human band, but no temporal structure behind it and no smooth
+        // radius wobble. Natural hand jitter is autocorrelated and humans
+        // always leave some low-frequency wobble; independent noise on a
+        // generated circle shows neither.
+        if (sampleCount >= 40 &&
+            g.radialResidual > 0.0015 &&
+            g.radialResidualAutocorr < 0.1 &&
+            g.radialWobble < 0.01) {
+            add("NOISE_WITHOUT_STRUCTURE", `radial jitter (amplitude ${(g.radialResidual * 100).toFixed(2)}% of radius) has no temporal structure (autocorrelation ${g.radialResidualAutocorr.toFixed(2)}) and the radius shows no natural wobble; consistent with synthetic noise added to a generated path`);
+        }
+    }
+    return anomalies;
+}
+/** Whether the circle fit itself succeeded (mirrors the quality gate). */
+function fitOk(metrics) {
+    return metrics.geometry.radius > 0;
+}
+
+// ---- dist/esm/analyze.js -----------------------------------------
+/**
+ * Pure analysis entrypoint.
+ *
+ * This module is Node-safe by construction: it pulls in only the
+ * environment-agnostic engine and shared types. It touches no DOM types
+ * or APIs, so server-side analysis of samples collected elsewhere
+ * imports from here with zero browser baggage.
+ *
+ * ```ts
+ * import { analyzeSamples } from "circle-human-detector/analyze";
+ *
+ * const result = analyzeSamples(samples, { sensitivity: "balanced" });
+ * ```
+ */
+
+// ---- dist/esm/collector.js -----------------------------------------
+/**
+ * Browser pointer-event capture.
+ *
+ * This layer is a thin translator: DOM pointer events in, environment-
+ * agnostic `PointerSample`s out. All analysis lives in the engine, so
+ * this module holds no detection logic and can be swapped or replaced
+ * by a custom capture pipeline that feeds the same samples.
+ *
+ * Recommended setup on the drawing surface (CSS):
+ *
+ * ```css
+ * .draw-surface { touch-action: none; }
+ * ```
+ *
+ * `touch-action: none` prevents scrolling/zooming from consuming touch
+ * input mid-stroke. No data ever leaves this module: samples are held
+ * in memory and released only to the caller via `getSamples()`.
+ */
+/**
+ * Ordered stroke buffer. Owns the pointerdown/pointerup state machine
+ * so DOM capture and manual event feeding share exactly one
+ * implementation of stroke semantics:
+ *
+ * - `pointerdown` begins a stroke (duplicates while drawing are ignored).
+ * - Samples are only recorded while a stroke is active.
+ * - `pointerup`/`pointercancel` record the final position and close the
+ *   stroke; the next `pointerdown` opens stroke index + 1.
+ */
+class SampleBuffer {
+    samples = [];
+    strokeIndex = 0;
+    drawing = false;
+    /** Whether a stroke is currently open. */
+    get inStroke() {
+        return this.drawing;
+    }
+    /** Begin a stroke. Ignored when a stroke is already open. */
+    beginStroke() {
+        if (this.drawing)
+            return;
+        this.drawing = true;
+    }
+    /** Close the open stroke. Ignored when no stroke is open. */
+    endStroke() {
+        if (!this.drawing)
+            return;
+        this.drawing = false;
+        this.strokeIndex++;
+    }
+    /** Record a sample into the open stroke. No-op when no stroke is open. */
+    add(sample) {
+        if (!this.drawing)
+            return;
+        this.samples.push({ ...sample, stroke: this.strokeIndex });
+    }
+    /** A copy of the recorded samples, in capture order. */
+    getSamples() {
+        return [...this.samples];
+    }
+    /** Drop all recorded samples and reset the stroke state. */
+    clear() {
+        this.samples = [];
+        this.strokeIndex = 0;
+        this.drawing = false;
+    }
+}
+/**
+ * Captures pointer events from a target element into a `SampleBuffer`.
+ *
+ * Tracks the primary pointer only: the first pointerdown while idle
+ * owns the stroke, and events from other pointers are ignored until it
+ * lifts. Uses pointer capture when the target supports it so a stroke
+ * continues even when the pointer leaves the element.
+ */
+class CircleCollector {
+    target;
+    buffer;
+    useOffsetCoordinates;
+    attached = false;
+    activePointerId = null;
+    constructor(target, options) {
+        this.target = target;
+        this.buffer = options?.buffer ?? new SampleBuffer();
+        this.useOffsetCoordinates = (options?.coordinates ?? "offset") === "offset";
+    }
+    /** Whether the collector is currently listening. */
+    get isAttached() {
+        return this.attached;
+    }
+    /** The buffer this collector records into. */
+    get sampleBuffer() {
+        return this.buffer;
+    }
+    /** Start listening for pointer events. Idempotent. */
+    attach() {
+        if (this.attached)
+            return;
+        this.attached = true;
+        this.target.addEventListener("pointerdown", this.onPointerDown);
+        this.target.addEventListener("pointermove", this.onPointerMove);
+        this.target.addEventListener("pointerup", this.onPointerUp);
+        this.target.addEventListener("pointercancel", this.onPointerUp);
+    }
+    /** Stop listening. Idempotent. Recorded samples are kept.
+     *
+     * Detaching mid-stroke ends the capture session: the active pointer
+     * is forgotten, the open stroke is closed, and recording resumes only
+     * after a fresh `pointerdown` once re-attached (a collector that was
+     * not listening cannot know whether the physical pointer is still
+     * down, so it never merges across a detach).
+     */
+    detach() {
+        if (!this.attached)
+            return;
+        this.attached = false;
+        this.activePointerId = null;
+        if (this.buffer.inStroke) {
+            this.buffer.endStroke();
+        }
+        this.target.removeEventListener("pointerdown", this.onPointerDown);
+        this.target.removeEventListener("pointermove", this.onPointerMove);
+        this.target.removeEventListener("pointerup", this.onPointerUp);
+        this.target.removeEventListener("pointercancel", this.onPointerUp);
+    }
+    /** Recorded samples, in capture order. */
+    getSamples() {
+        return this.buffer.getSamples();
+    }
+    /** Drop all recorded samples and reset capture state. */
+    clear() {
+        this.buffer.clear();
+        this.activePointerId = null;
+    }
+    onPointerDown = (event) => {
+        if (this.activePointerId !== null)
+            return;
+        if (!Number.isFinite(event.pointerId))
+            return;
+        this.activePointerId = event.pointerId;
+        this.buffer.beginStroke();
+        this.trySetPointerCapture(event.pointerId);
+        this.push(event);
+    };
+    onPointerMove = (event) => {
+        if (this.activePointerId === null)
+            return;
+        if (event.pointerId !== this.activePointerId)
+            return;
+        this.push(event);
+    };
+    onPointerUp = (event) => {
+        if (this.activePointerId === null)
+            return;
+        if (event.pointerId !== this.activePointerId)
+            return;
+        this.push(event);
+        this.buffer.endStroke();
+        this.tryReleasePointerCapture(event.pointerId);
+        this.activePointerId = null;
+    };
+    push(event) {
+        const x = this.useOffsetCoordinates
+            ? (Number.isFinite(event.offsetX) ? event.offsetX : event.clientX)
+            : event.clientX;
+        const y = this.useOffsetCoordinates
+            ? (Number.isFinite(event.offsetY) ? event.offsetY : event.clientY)
+            : event.clientY;
+        // Malformed coordinates (never produced by real DOM events) are
+        // skipped defensively rather than corrupting the buffer.
+        if (!Number.isFinite(x) || !Number.isFinite(y))
+            return;
+        if (!Number.isFinite(event.timeStamp))
+            return;
+        this.buffer.add({
+            x,
+            y,
+            t: event.timeStamp,
+            ...(typeof event.pressure === "number" ? { pressure: event.pressure } : {}),
+            ...(typeof event.pointerType === "string"
+                ? { pointerType: event.pointerType }
+                : {}),
+            ...(typeof event.width === "number" ? { width: event.width } : {}),
+        });
+    }
+    trySetPointerCapture(pointerId) {
+        try {
+            this.target.setPointerCapture?.(pointerId);
+        }
+        catch {
+            // Pointer capture is best-effort; some targets reject it while
+            // not being in an active pointer session.
+        }
+    }
+    tryReleasePointerCapture(pointerId) {
+        try {
+            this.target.releasePointerCapture?.(pointerId);
+        }
+        catch {
+            // Best-effort, mirroring setPointerCapture.
+        }
+    }
+}
+
+// ---- dist/esm/detector.js -----------------------------------------
+/**
+ * CircleDetector — the facade over collection + analysis.
+ *
+ * Two usage modes share one implementation:
+ *
+ * 1. DOM capture (browser): pass a `target` element; `start()` attaches
+ *    a pointer-event collector to it and `analyze()` scores what was
+ *    drawn.
+ *
+ *    ```ts
+ *    const detector = new CircleDetector({ target: canvas, sensitivity: "balanced" });
+ *    detector.start();
+ *    // user draws...
+ *    const result = detector.analyze();
+ *    ```
+ *
+ * 2. Manual feeding (browser or Node): omit `target` and forward
+ *    pointer events yourself.
+ *
+ *    ```ts
+ *    const detector = new CircleDetector({ sensitivity: "balanced" });
+ *    detector.start();
+ *    detector.recordEvent({ type: "pointerdown", x: 10, y: 10, t: 0 });
+ *    // ...pointermove events...
+ *    detector.recordEvent({ type: "pointerup", x: 40, y: 12, t: 900 });
+ *    const result = detector.analyze();
+ *    ```
+ *
+ * The detector never throws on data-quality problems; those surface as
+ * `classification: "INCONCLUSIVE"` with reasons in `anomalies`. It
+ * throws only for programming errors (invalid options, malformed
+ * events, feeding before `start()`).
+ */
+
+
+
+
+/** Monotonic clock in milliseconds; `performance.now()` when available. */
+function nowMs() {
+    if (typeof performance !== "undefined" && typeof performance.now === "function") {
+        return performance.now();
+    }
+    return Date.now();
+}
+/** Event types the facade accepts. */
+const EVENT_TYPES = new Set([
+    "pointerdown",
+    "pointermove",
+    "pointerup",
+    "pointercancel",
+]);
+/**
+ * Collects and analyzes one circle-drawing interaction.
+ *
+ * The facade is deliberately small: it owns a sample buffer, optionally
+ * wires a DOM collector into it, and delegates all scoring to
+ * `analyzeSamples`. Classification behavior and error contracts are
+ * documented on the engine.
+ */
+class CircleDetector {
+    options;
+    buffer = new SampleBuffer();
+    collector;
+    runningState = false;
+    constructor(options = {}) {
+        // Validate eagerly so misconfiguration surfaces at construction,
+        // not at analyze() time.
+        resolveOptions(options);
+        this.options = options;
+        this.collector =
+            options.target !== undefined
+                ? new CircleCollector(options.target, {
+                    buffer: this.buffer,
+                    coordinates: options.coordinates ?? "offset",
+                })
+                : null;
+    }
+    /** Whether the detector is running (accepting events). */
+    get running() {
+        return this.runningState;
+    }
+    /** Samples captured so far, in order. */
+    getSamples() {
+        return this.buffer.getSamples();
+    }
+    /**
+     * Begin a new interaction: clears any previously captured samples and
+     * (when constructed with a `target`) attaches the DOM collector.
+     * Idempotent.
+     */
+    start() {
+        this.buffer.clear();
+        if (this.collector !== null) {
+            this.collector.clear();
+            this.collector.attach();
+        }
+        this.runningState = true;
+    }
+    /**
+     * Stop accepting events. Detaches the DOM collector when present.
+     * Already-captured samples are kept for `analyze()`. Idempotent.
+     */
+    stop() {
+        if (this.collector !== null) {
+            this.collector.detach();
+        }
+        this.runningState = false;
+    }
+    /**
+     * Clear captured samples without changing the running state.
+     * Call between attempts on the same surface.
+     */
+    reset() {
+        this.buffer.clear();
+    }
+    /**
+     * Feed one pointer event manually (no-DOM mode). Mirrors collector
+     * semantics: `pointerdown` opens a stroke, moves record only while a
+     * stroke is open, `pointerup`/`pointercancel` close it.
+     *
+     * @throws {CircleDetectorError} code `NOT_STARTED` before `start()`.
+     * @throws {CircleDetectorError} code `INVALID_SAMPLES` when the event
+     *   has an unknown `type` or non-finite coordinates/timestamp.
+     */
+    recordEvent(event) {
+        if (!this.runningState) {
+            throw new CircleDetectorError("NOT_STARTED", "recordEvent() was called before start(); call start() first");
+        }
+        if (typeof event !== "object" || event === null || !EVENT_TYPES.has(event.type)) {
+            throw new CircleDetectorError("INVALID_SAMPLES", `recordEvent() expects type "pointerdown" | "pointermove" | "pointerup" | "pointercancel" (got ${JSON.stringify(event?.type)})`);
+        }
+        if (!Number.isFinite(event.x) || !Number.isFinite(event.y)) {
+            throw new CircleDetectorError("INVALID_SAMPLES", `recordEvent() expects finite x and y (got x=${String(event.x)}, y=${String(event.y)})`);
+        }
+        const t = event.t ?? nowMs();
+        if (!Number.isFinite(t)) {
+            throw new CircleDetectorError("INVALID_SAMPLES", `recordEvent() expects a finite t when provided (got ${String(t)})`);
+        }
+        const sample = {
+            x: event.x,
+            y: event.y,
+            t,
+            ...(event.pressure !== undefined ? { pressure: event.pressure } : {}),
+            ...(event.pointerType !== undefined ? { pointerType: event.pointerType } : {}),
+            ...(event.width !== undefined ? { width: event.width } : {}),
+        };
+        switch (event.type) {
+            case "pointerdown":
+                this.buffer.beginStroke();
+                this.buffer.add(sample);
+                break;
+            case "pointermove":
+                this.buffer.add(sample);
+                break;
+            case "pointerup":
+            case "pointercancel":
+                if (this.buffer.inStroke) {
+                    this.buffer.add(sample);
+                    this.buffer.endStroke();
+                }
+                break;
+        }
+    }
+    /**
+     * Analyze the captured interaction.
+     *
+     * Uses the constructor's sensitivity/threshold settings; pass
+     * `override` to score the same samples under different settings
+     * without recapturing.
+     */
+    analyze(override) {
+        const merged = {
+            sensitivity: this.options.sensitivity,
+            thresholds: this.options.thresholds,
+            minSamples: this.options.minSamples,
+            minDurationMs: this.options.minDurationMs,
+            minCoverageTurns: this.options.minCoverageTurns,
+            pauseMs: this.options.pauseMs,
+            ...override,
+        };
+        return analyzeSamples(this.buffer.getSamples(), merged);
+    }
+}
+
+// ---- dist/esm/index.js -----------------------------------------
+/**
+ * circle-human-detector
+ *
+ * Behavioral detection of human vs machine-generated circle drawing.
+ *
+ * The full public surface: the `CircleDetector` facade, the DOM
+ * collector, and the pure analysis engine. Server-side code that only
+ * needs to analyze already-collected samples should import from
+ * `circle-human-detector/analyze` instead — it pulls in no browser
+ * types at all.
+ */
+
+// ---- dist/esm/types.js -----------------------------------------
+
+/* ENGINE-END */
+    </script>
+
+    <script>
+      "use strict";
+      (function () {
+        var MIN_AUTO_ANALYZE_SAMPLES = 24;
+
+        var canvas = document.getElementById("surface");
+        var ctx = canvas.getContext("2d");
+        var sensitivitySelect = document.getElementById("sensitivity");
+        var analyzeButton = document.getElementById("analyze");
+        var clearButton = document.getElementById("clear");
+        var botCleanButton = document.getElementById("bot-clean");
+        var botNoisyButton = document.getElementById("bot-noisy");
+        var hint = document.getElementById("hint");
+        var verdictEl = document.getElementById("verdict");
+        var barsEl = document.getElementById("bars");
+        var statsEl = document.getElementById("stats");
+        var anomaliesCard = document.getElementById("anomalies-card");
+        var anomalyList = document.getElementById("anomaly-list");
+        var metricsCard = document.getElementById("metrics-card");
+        var metricsBody = document.getElementById("metrics-body");
+
+        var GUIDE = { x: canvas.width / 2, y: canvas.height / 2, r: 150 };
+        var replaying = false;
+
+        ctx.lineWidth = 2;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+
+        function drawGuide() {
+          ctx.save();
+          ctx.strokeStyle = "rgba(74, 157, 255, 0.16)";
+          ctx.setLineDash([4, 8]);
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(GUIDE.x, GUIDE.y, GUIDE.r, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        function clearCanvas() {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          drawGuide();
+        }
+
+        // The detector: captures pointer events from the canvas itself.
+        var detector = new CircleDetector({
+          target: canvas,
+          sensitivity: "balanced",
+        });
+        detector.start();
+
+        // Mirror the stroke onto the canvas while it is captured.
+        canvas.addEventListener("pointerdown", function (e) {
+          if (replaying) return;
+          ctx.strokeStyle = "#e6e9ef";
+          ctx.beginPath();
+          ctx.moveTo(e.offsetX, e.offsetY);
+        });
+        canvas.addEventListener("pointermove", function (e) {
+          if (replaying || e.buttons === 0) return;
+          ctx.lineTo(e.offsetX, e.offsetY);
+          ctx.stroke();
+        });
+
+        canvas.addEventListener("pointerup", function () {
+          if (replaying) return;
+          if (detector.getSamples().length >= MIN_AUTO_ANALYZE_SAMPLES) {
+            runAnalyze();
+          } else {
+            setHint("Draw a fuller circle so there is enough data to analyze.");
+          }
+        });
+
+        analyzeButton.addEventListener("click", function () {
+          if (detector.getSamples().length >= 2) runAnalyze();
+        });
+
+        clearButton.addEventListener("click", clearAll);
+
+        sensitivitySelect.addEventListener("change", function () {
+          // Re-score the same captured samples under the new preset.
+          if (detector.getSamples().length >= 2) runAnalyze();
+        });
+
+        function currentSensitivity() {
+          return sensitivitySelect.value;
+        }
+
+        function runAnalyze() {
+          var result;
+          try {
+            result = detector.analyze({ sensitivity: currentSensitivity() });
+          } catch (err) {
+            setHint("Analysis failed: " + (err && err.message ? err.message : String(err)));
+            return;
+          }
+          render(result);
+        }
+
+        // ----- Synthetic machine replay --------------------------------
+        // Both replays feed events through the exact same recordEvent
+        // pipeline a script would use, then get analyzed like user input.
+
+        function gaussian() {
+          var u = 0, v = 0;
+          while (u === 0) u = Math.random();
+          while (v === 0) v = Math.random();
+          return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+        }
+
+        function buildBotEvents(variant) {
+          var events = [];
+          var turns = 1.05;
+          var durationMs = 1400;
+          var dt = 9; // uniform timer cadence, like a fixed-interval script
+          var n = Math.floor(durationMs / dt);
+          var cx = GUIDE.x, cy = GUIDE.y, r = GUIDE.r;
+          var startAngle = -Math.PI / 2;
+          var t = 1000;
+
+          // No ramps: machines start and end at full speed.
+          for (var i = 0; i <= n; i++) {
+            var frac = i / n;
+            var angle = startAngle + frac * turns * 2 * Math.PI;
+            var x = cx + r * Math.cos(angle);
+            var y = cy + r * Math.sin(angle);
+            if (variant === "noisy") {
+              x += gaussian() * 1.1;
+              y += gaussian() * 1.1;
+            }
+            var type = i === 0 ? "pointerdown" : (i === n ? "pointerup" : "pointermove");
+            var ev = { type: type, x: x, y: y, t: t + i * dt };
+            if (variant === "noisy") {
+              ev.t += Math.round((Math.random() - 0.5) * 6);
+            }
+            events.push(ev);
+          }
+          return events;
+        }
+
+        function replayBot(variant) {
+          if (replaying) return;
+          var events = buildBotEvents(variant);
+          replaying = true;
+          setButtonsDisabled(true);
+          clearAll();
+          setHint("Replaying a synthetic machine stroke...");
+
+          var i = 0;
+          var last = null;
+          function step() {
+            // Feed a few events per frame so the replay is visible.
+            for (var k = 0; k < 3 && i < events.length; k++, i++) {
+              var ev = events[i];
+              detector.recordEvent(ev);
+              if (last !== null) {
+                ctx.strokeStyle = variant === "noisy" ? "#ff9d5d" : "#ff5d5d";
+                ctx.beginPath();
+                ctx.moveTo(last.x, last.y);
+                ctx.lineTo(ev.x, ev.y);
+                ctx.stroke();
+              } else {
+                ctx.strokeStyle = variant === "noisy" ? "#ff9d5d" : "#ff5d5d";
+                ctx.beginPath();
+                ctx.moveTo(ev.x, ev.y);
+              }
+              last = { x: ev.x, y: ev.y };
+            }
+            if (i < events.length) {
+              requestAnimationFrame(step);
+            } else {
+              replaying = false;
+              setButtonsDisabled(false);
+              setHint(
+                variant === "noisy"
+                  ? "Noisy bot: constant angular velocity with injected white noise. Noise fakes amplitude but not temporal structure."
+                  : "Scripted bot: constant angular velocity on a fixed-interval timer. Textbook machine signatures."
+              );
+              runAnalyze();
+            }
+          }
+          requestAnimationFrame(step);
+        }
+
+        botCleanButton.addEventListener("click", function () { replayBot("clean"); });
+        botNoisyButton.addEventListener("click", function () { replayBot("noisy"); });
+
+        function setButtonsDisabled(disabled) {
+          [analyzeButton, clearButton, botCleanButton, botNoisyButton].forEach(function (b) {
+            b.disabled = disabled;
+          });
+        }
+
+        // ----- Result rendering ------------------------------------------
+
+        function render(result) {
+          var cls = result.classification;
+          verdictEl.textContent = cls;
+          verdictEl.className = "verdict-badge " + cls;
+
+          barsEl.hidden = false;
+          setBar("score-bar", "score-value", result.score);
+          setBar("conf-bar", "conf-value", result.confidence);
+
+          var m = result.metrics;
+          statsEl.hidden = false;
+          statsEl.textContent =
+            m.sampleCount + " samples, " +
+            m.durationMs.toFixed(0) + " ms, " +
+            m.geometry.coverageTurns.toFixed(2) + " turns" +
+            (m.droppedSamples > 0 ? ", " + m.droppedSamples + " dropped" : "") +
+            (m.strokeCount > 1 ? ", " + m.strokeCount + " strokes" : "");
+
+          if (result.anomalies.length === 0) {
+            anomaliesCard.hidden = cls !== "HUMAN_LIKE";
+            if (cls === "HUMAN_LIKE") {
+              anomalyList.replaceChildren();
+              var li = document.createElement("li");
+              li.textContent = "No machine signatures or data-quality problems detected.";
+              anomalyList.appendChild(li);
+            }
+          } else {
+            anomaliesCard.hidden = false;
+            anomalyList.replaceChildren(
+              result.anomalies.map(function (a) {
+                var li = document.createElement("li");
+                var sev = document.createElement("span");
+                sev.className = "sev " + a.severity;
+                sev.textContent = a.severity;
+                li.appendChild(sev);
+                var code = document.createElement("b");
+                code.textContent = a.code;
+                li.appendChild(code);
+                li.appendChild(document.createTextNode(" - " + a.detail));
+                return li;
+              })
+            );
+          }
+
+          metricsCard.hidden = false;
+          metricsBody.replaceChildren(
+            result.contributions.map(function (c) {
+              var tr = document.createElement("tr");
+              if (c.weight === 0) tr.className = "zero-weight";
+
+              var tdName = document.createElement("td");
+              tdName.textContent = c.label;
+              if (c.note) {
+                var note = document.createElement("span");
+                note.className = "note";
+                note.textContent = c.note;
+                tdName.appendChild(note);
+              }
+              tr.appendChild(tdName);
+
+              var tdValue = document.createElement("td");
+              tdValue.className = "num";
+              var track = document.createElement("span");
+              track.className = "mini-track";
+              var fill = document.createElement("span");
+              fill.className = "mini-fill";
+              fill.style.width = (c.value * 100).toFixed(1) + "%";
+              track.appendChild(fill);
+              tdValue.appendChild(track);
+              tdValue.appendChild(document.createTextNode(c.value.toFixed(2)));
+              tr.appendChild(tdValue);
+
+              var tdWeight = document.createElement("td");
+              tdWeight.className = "num";
+              tdWeight.textContent = c.weight.toFixed(2);
+              tr.appendChild(tdWeight);
+
+              return tr;
+            })
+          );
+        }
+
+        function setBar(barId, valueId, value) {
+          document.getElementById(barId).style.width = (value * 100).toFixed(1) + "%";
+          document.getElementById(valueId).textContent = value.toFixed(3);
+        }
+
+        function setHint(text) {
+          hint.textContent = text;
+        }
+
+        function clearAll() {
+          detector.reset();
+          clearCanvas();
+          verdictEl.textContent = "DRAW A CIRCLE";
+          verdictEl.className = "verdict-badge INCONCLUSIVE";
+          barsEl.hidden = true;
+          statsEl.hidden = true;
+          anomaliesCard.hidden = true;
+          metricsCard.hidden = true;
+          setHint("The faint ring is only a visual guide - the analysis never measures how well you traced it.");
+        }
+
+        clearCanvas();
+      })();
+    </script>
+  </body>
+</html>
